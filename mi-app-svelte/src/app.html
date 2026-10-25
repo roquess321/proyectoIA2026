@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="text-scale" content="scale" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              /* === LIGHT THEME === */
+              "secondary-fixed": "#d9e2ff",
+              "on-secondary-container": "#164089",
+              "on-error-container": "#93000a",
+              "inverse-surface": "#213145",
+              tertiary: "#1e0b00",
+              "on-secondary-fixed": "#001944",
+              "on-error": "#ffffff",
+              "surface-container-highest": "#d3e4fe",
+              error: "#ba1a1a",
+              background: "#f8f9ff",
+              "surface-container-high": "#dce9ff",
+              primary: "#001026",
+              secondary: "#385ca6",
+              "error-container": "#ffdad6",
+              "on-tertiary-fixed-variant": "#6e3900",
+              "on-surface": "#0b1c30",
+              "surface-variant": "#d3e4fe",
+              "on-primary-fixed": "#001c3b",
+              "surface-bright": "#f8f9ff",
+              "primary-fixed-dim": "#b1c7f0",
+              outline: "#74777f",
+              "tertiary-fixed": "#ffdcc3",
+              "on-tertiary-fixed": "#2f1500",
+              "on-primary-fixed-variant": "#314769",
+              "secondary-container": "#8eafff",
+              "primary-container": "#0b2545",
+              "on-surface-variant": "#44474e",
+              "on-primary": "#ffffff",
+              "surface-container-low": "#eff4ff",
+              "on-tertiary-container": "#d47300",
+              "tertiary-fixed-dim": "#ffb77d",
+              "inverse-primary": "#b1c7f0",
+              "secondary-fixed-dim": "#b0c6ff",
+              "tertiary-container": "#3c1d00",
+              "surface-container-lowest": "#ffffff",
+              "surface-container": "#e5eeff",
+              "on-secondary-fixed-variant": "#1b448d",
+              "surface-tint": "#495f82",
+              "on-secondary": "#ffffff",
+              "on-primary-container": "#778db2",
+              "on-tertiary": "#ffffff",
+              "outline-variant": "#c4c6cf",
+              "on-background": "#0b1c30",
+              "primary-fixed": "#d5e3ff",
+              "surface-dim": "#cbdbf5",
+              "inverse-on-surface": "#eaf1ff",
+              surface: "#f8f9ff",
+            },
+            borderRadius: {
+              DEFAULT: "0.125rem",
+              lg: "0.25rem",
+              xl: "0.5rem",
+              full: "0.75rem",
+            },
+            spacing: {
+              "gutter-mobile": "1rem",
+              gutter: "1.5rem",
+              margin: "2rem",
+              "space-xs": "0.25rem",
+              "margin-mobile": "1rem",
+              "space-xl": "2.5rem",
+              "space-sm": "0.5rem",
+              "space-md": "1rem",
+              "space-lg": "1.5rem",
+            },
+            fontFamily: {
+              "headline-xl": ["Plus Jakarta Sans", "sans-serif"],
+              "headline-md": ["Plus Jakarta Sans", "sans-serif"],
+              "body-md": ["Inter", "sans-serif"],
+              "body-lg": ["Inter", "sans-serif"],
+              "body-sm": ["Inter", "sans-serif"],
+              "code-num": ["Inter", "monospace"],
+              "headline-lg-mobile": ["Plus Jakarta Sans", "sans-serif"],
+              "headline-lg": ["Plus Jakarta Sans", "sans-serif"],
+              "headline-sm": ["Plus Jakarta Sans", "sans-serif"],
+              "headline-xl-mobile": ["Plus Jakarta Sans", "sans-serif"],
+              "label-md": ["Inter", "sans-serif"],
+              "label-sm": ["Inter", "sans-serif"],
+            },
+            fontSize: {
+              "headline-xl": [
+                "2.5rem",
+                {
+                  lineHeight: "3rem",
+                  letterSpacing: "-0.025em",
+                  fontWeight: "700",
+                },
+              ],
+              "headline-md": [
+                "1.5rem",
+                {
+                  lineHeight: "2rem",
+                  letterSpacing: "-0.015em",
+                  fontWeight: "600",
+                },
+              ],
+              "body-md": [
+                "0.9375rem",
+                {
+                  lineHeight: "1.5rem",
+                  letterSpacing: "0em",
+                  fontWeight: "400",
+                },
+              ],
+              "body-lg": [
+                "1.125rem",
+                {
+                  lineHeight: "1.75rem",
+                  letterSpacing: "-0.01em",
+                  fontWeight: "400",
+                },
+              ],
+              "body-sm": [
+                "0.8125rem",
+                {
+                  lineHeight: "1.25rem",
+                  letterSpacing: "0em",
+                  fontWeight: "400",
+                },
+              ],
+              "code-num": [
+                "0.875rem",
+                {
+                  lineHeight: "1.25rem",
+                  letterSpacing: "-0.01em",
+                  fontWeight: "500",
+                },
+              ],
+              "headline-lg-mobile": [
+                "1.5rem",
+                {
+                  lineHeight: "2rem",
+                  letterSpacing: "-0.015em",
+                  fontWeight: "600",
+                },
+              ],
+              "headline-lg": [
+                "2rem",
+                {
+                  lineHeight: "2.5rem",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "700",
+                },
+              ],
+              "headline-sm": [
+                "1.25rem",
+                {
+                  lineHeight: "1.75rem",
+                  letterSpacing: "-0.01em",
+                  fontWeight: "600",
+                },
+              ],
+              "headline-xl-mobile": [
+                "1.875rem",
+                {
+                  lineHeight: "2.25rem",
+                  letterSpacing: "-0.02em",
+                  fontWeight: "700",
+                },
+              ],
+              "label-md": [
+                "0.875rem",
+                {
+                  lineHeight: "1.25rem",
+                  letterSpacing: "0.01em",
+                  fontWeight: "600",
+                },
+              ],
+              "label-sm": [
+                "0.75rem",
+                {
+                  lineHeight: "1rem",
+                  letterSpacing: "0.025em",
+                  fontWeight: "600",
+                },
+              ],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      /* === DARK THEME OVERRIDES === */
+      .dark {
+        --tw-bg-opacity: 1;
+      }
+      .dark .bg-background {
+        background-color: #031427 !important;
+      }
+      .dark .bg-surface,
+      .dark .bg-surface\/90 {
+        background-color: rgba(3, 20, 39, 0.9) !important;
+      }
+      .dark .bg-surface-container-lowest {
+        background-color: #000f21 !important;
+      }
+      .dark .bg-surface-container-low {
+        background-color: #0b1c30 !important;
+      }
+      .dark .bg-surface-container {
+        background-color: #102034 !important;
+      }
+      .dark .bg-surface-container-high {
+        background-color: #1b2b3f !important;
+      }
+      .dark .bg-surface-container-highest {
+        background-color: #26364a !important;
+      }
+      .dark .bg-primary {
+        background-color: #b1c7f0 !important;
+      }
+      .dark .bg-primary-container {
+        background-color: #0b2545 !important;
+      }
+      .dark .bg-secondary {
+        background-color: #b0c6ff !important;
+      }
+      .dark .bg-secondary-container {
+        background-color: #1b448d !important;
+      }
+      .dark .text-on-surface {
+        color: #d3e4fe !important;
+      }
+      .dark .text-on-surface-variant {
+        color: #c4c6cf !important;
+      }
+      .dark .text-on-background {
+        color: #d3e4fe !important;
+      }
+      .dark .text-on-primary {
+        color: #193151 !important;
+      }
+      .dark .text-on-secondary {
+        color: #002d6e !important;
+      }
+      .dark .text-primary {
+        color: #b1c7f0 !important;
+      }
+      .dark .text-secondary {
+        color: #b0c6ff !important;
+      }
+      .dark .ring-surface-container-high {
+        --tw-ring-color: #1b2b3f !important;
+      }
+      /* Hover overrides en tema oscuro */
+      .dark .hover\:bg-surface-container:hover {
+        background-color: #102034 !important;
+      }
+      .dark .hover\:bg-surface-container-high:hover {
+        background-color: #1b2b3f !important;
+      }
+      .dark .hover\:bg-surface-container-highest:hover {
+        background-color: #26364a !important;
+      }
+      .dark .hover\:text-on-surface:hover {
+        color: #d3e4fe !important;
+      }
+    </style>
+    <script>
+      // Anti-flash: aplica tema antes del primer render
+      (function () {
+        var theme = localStorage.getItem("theme");
+        if (theme === "dark") {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
+    %sveltekit.head%
+  </head>
+  <body
+    data-sveltekit-preload-data="hover"
+    class="bg-background text-on-surface"
+  >
+    <div style="display: contents">%sveltekit.body%</div>
+  </body>
+</html>

@@ -1,0 +1,102 @@
+import type { SubjectSimulation, ChatMessage } from "../types/simulator";
+
+export const simulationSubjects: SubjectSimulation[] = [
+  {
+    id: "mec-431",
+    name: "Máquinas Térmicas I",
+    catedra: "Cátedra B",
+    professor: "Prof. Ing. Martínez",
+    p1: 9.0,
+    p1Max: 20,
+    p1Date: "12/09/2024",
+    p1ClassAverage: 11.2,
+    lab: 8.5,
+    labMax: 10,
+    labSessionsEvaluated: 4,
+    labPendingDeliveries: 0,
+    defaultP2: 14,
+    attendanceRate: 82.0,
+    attendedSessions: 26,
+    totalSessions: 32,
+    attendanceArticle: "Cumple Art. 32 (Mín. 75%)",
+    criticalTopic: "Ciclos Rankine y Regenerativos",
+    historicalInsight:
+      "73% de alumnos con 9 en P1 que obtuvieron ≥14 en P2 aprobaron satisfactoriamente en la 1ra Oportunidad de Examen Final.",
+  },
+  {
+    id: "civ-412",
+    name: "Resistencia de Materiales II",
+    catedra: "Cátedra A",
+    professor: "Prof. Dr. Silva",
+    p1: 12.0,
+    p1Max: 20,
+    p1Date: "18/09/2024",
+    p1ClassAverage: 12.8,
+    lab: 8.0,
+    labMax: 10,
+    labSessionsEvaluated: 3,
+    labPendingDeliveries: 1,
+    defaultP2: 14,
+    attendanceRate: 88.0,
+    attendedSessions: 28,
+    totalSessions: 32,
+    attendanceArticle: "Cumple Art. 32 (Mín. 75%)",
+    criticalTopic: "Círculo de Mohr y Flexión Compuesta",
+    historicalInsight:
+      "81% de alumnos con ≥12 en P1 y ≥14 en P2 aprueban con calificación 3 o superior en la primera mesa.",
+  },
+  {
+    id: "ele-341",
+    name: "Electrónica de Potencia",
+    catedra: "Cátedra Única",
+    professor: "Prof. Msc. Gómez",
+    p1: 14.0,
+    p1Max: 20,
+    p1Date: "24/09/2024",
+    p1ClassAverage: 13.5,
+    lab: 9.5,
+    labMax: 10,
+    labSessionsEvaluated: 5,
+    labPendingDeliveries: 0,
+    defaultP2: 15,
+    attendanceRate: 94.0,
+    attendedSessions: 30,
+    totalSessions: 32,
+    attendanceArticle: "Cumple Art. 32 (Mín. 75%)",
+    criticalTopic: "Inversores Trifásicos PWM",
+    historicalInsight:
+      "89% de alumnos con proceso acumulado ≥38 pts acceden a calificación 4 o 5 en el examen final.",
+  },
+  {
+    id: "mec-324",
+    name: "Mecánica de Fluidos",
+    catedra: "Cátedra C",
+    professor: "Prof. Ing. Cardozo",
+    p1: 8.5,
+    p1Max: 20,
+    p1Date: "10/09/2024",
+    p1ClassAverage: 10.9,
+    lab: 8.0,
+    labMax: 10,
+    labSessionsEvaluated: 4,
+    labPendingDeliveries: 0,
+    defaultP2: 13,
+    attendanceRate: 78.0,
+    attendedSessions: 25,
+    totalSessions: 32,
+    attendanceArticle: "Cumple Art. 32 (Mín. 75%)",
+    criticalTopic: "Ecuación de Navier-Stokes y Pérdidas de Carga",
+    historicalInsight:
+      "Alumnos que alcanzan ≥14 en P2 logran un índice de aprobación del 76% en la mesa ordinaria.",
+  },
+];
+
+export const initialChatMessages: ChatMessage[] = [
+
+];
+
+export const quickPrompts: string[] = [
+  "Generar plan de estudio para este fin de semana",
+  "Ver ejercicios de exámenes anteriores",
+  "Simular para Resistencia de Materiales II",
+];

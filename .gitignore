@@ -1,0 +1,37 @@
+# Entornos virtuales Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Node & SvelteKit
+node_modules/
+mi-app-svelte/node_modules/
+.svelte-kit/
+mi-app-svelte/.svelte-kit/
+build/
+mi-app-svelte/build/
+.output/
+.vercel/
+.netlify/
+.wrangler/
+
+# Variables de entorno y secretos (NUNCA subir a GitHub)
+.env
+.env.*
+!.env.example
+mi-app-svelte/.env
+mi-app-svelte/.env.*
+!mi-app-svelte/.env.example
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
