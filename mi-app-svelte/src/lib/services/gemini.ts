@@ -1,96 +1,90 @@
-import type { GeminiChatMessage, GeminiApiResponse } from './types';
+import type {
+	GeminiChatMessage,
+	FastApiChatResponse,
+	FastApiHistoryResponse,
+	FastApiSessionSummary
+} from './types';
 
-const GEMINI_API_BASE =
-	'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent';
-
-/**
- * System prompt que contextualiza al LLM como asistente académico FIUNA.
- * Se inyecta al inicio de cada conversación para dar coherencia a las respuestas.
- */
-const SYSTEM_INSTRUCTION = `Eres el Copiloto Académico de FIUNA (Facultad de Ingeniería, Universidad Nacional de Asunción).
-Tu rol es asistir a estudiantes de ingeniería con consultas académicas: planes de estudio, estrategias de exámenes, cálculos de notas, reglamentos y orientación general.
-
-Reglas:
-- Responde siempre en español (Paraguay).
-- Sé conciso y directo; usa viñetas cuando sea apropiado.
-- Cuando el estudiante pregunte sobre notas o habilitación, explica los cálculos paso a paso.
-- No inventes datos específicos sobre profesores o cátedras si no tienes certeza.
-- Si no puedes responder algo, indícalo honestamente.
-- Mantén un tono profesional pero cercano.`;
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 /**
- * Envía un array de mensajes al modelo Gemini y devuelve la respuesta de texto.
- * Usa únicamente `fetch` nativo — sin dependencias externas.
+ * Envía un mensaje al backend orquestador FastAPI (el cual interactúa con Gemini y guarda en BD).
+ * No expone ninguna API Key en el cliente.
  *
- * @param messages  Historial completo de la conversación (user / model).
- * @returns         Texto plano con la respuesta del modelo.
- * @throws          Error si la API key no está configurada o la petición falla.
+ * @param messageInput  Texto del mensaje o array de mensajes históricos (se extrae el último user message).
+ * @param sessionId     ID opcional de sesión existente para mantener continuidad en la base de datos.
+ * @returns             Objeto con la respuesta del modelo y el ID de sesión.
  */
-export async function chat(messages: GeminiChatMessage[]): Promise<string> {
-	const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+export async function chat(
+	messageInput: GeminiChatMessage[] | string,
+	sessionId?: string | null
+): Promise<{ reply: string; sessionId: string }> {
+	let messageText = '';
 
-	if (!apiKey || apiKey === 'TU_CLAVE_GEMINI_AQUI') {
+	if (typeof messageInput === 'string') {
+		messageText = messageInput;
+	} else if (Array.isArray(messageInput) && messageInput.length > 0) {
+		// Buscar el último mensaje del usuario
+		const lastUserMsg = [...messageInput].reverse().find((m) => m.role === 'user');
+		messageText = lastUserMsg ? lastUserMsg.content : messageInput[messageInput.length - 1].content;
+	} else {
+		throw new Error('El mensaje no puede estar vacío.');
+	}
+
+	const url = `${API_BASE}/api/chat`;
+
+	let response: Response;
+	try {
+		response = await fetch(url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				message: messageText,
+				session_id: sessionId || undefined
+			})
+		});
+	} catch (networkError) {
 		throw new Error(
-			'La clave API de Gemini no está configurada. ' +
-			'Añade tu clave en el archivo .env como VITE_GEMINI_API_KEY=tu_clave'
+			'No se pudo conectar con el servidor backend FastAPI (http://localhost:8000). ' +
+			'Asegúrate de haber iniciado el backend con "uv run uvicorn backend.main:app --reload".'
 		);
 	}
 
-	const url = `${GEMINI_API_BASE}?key=${apiKey}`;
-	const body = {
-		system_instruction: {
-			parts: [{ text: SYSTEM_INSTRUCTION }]
-		},
-		contents: messages.map((msg) => ({
-			role: msg.role,
-			parts: [{ text: msg.content }]
-		})),
-		generationConfig: {
-			temperature: 0.7,
-			topP: 0.95,
-			topK: 40,
-			maxOutputTokens: 1024
-		}
-	};
-
-	const response = await fetch(url, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-
 	if (!response.ok) {
 		const errorText = await response.text();
-		throw new Error(`Error de la API Gemini (${response.status}): ${errorText}`);
+		throw new Error(`Error del servidor backend (${response.status}): ${errorText}`);
 	}
 
-	const data: GeminiApiResponse = await response.json();
+	const data: FastApiChatResponse = await response.json();
 
-	if (data.error) {
-		throw new Error(`Gemini error: ${data.error.message}`);
+	if (!data.reply) {
+		throw new Error('La respuesta del servidor no contiene texto.');
 	}
 
-	const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-	if (!text) {
-		throw new Error('La respuesta de Gemini no contiene texto.');
-	}
-
-	return text;
+	return {
+		reply: data.reply,
+		sessionId: data.session_id
+	};
 }
 
 /**
- * Placeholder para futuras predicciones ML.
- * Cuando se integre un modelo de predicción, esta función convertirá
- * el payload en un prompt estructurado y reutilizará `chat()`.
- *
- * @example
- * // Futuro uso:
- * // const result = await predict({ subjectId: 'mec-431', p1: 9, p2: 14, lab: 8.5, attendanceRate: 82 });
+ * Obtiene el historial completo de una sesión persistido en la base de datos SQLite.
  */
-// export async function predict(input: PredictionInput): Promise<PredictionResult> {
-//   const prompt = `Dado un alumno con P1=${input.p1}, P2=${input.p2}, Lab=${input.lab}...`;
-//   const response = await chat([{ role: 'user', content: prompt }]);
-//   // Parsear respuesta estructurada...
-//   return { probability: 0, requiredFinalScore: 0, recommendation: response };
-// }
+export async function getChatHistory(sessionId: string): Promise<FastApiHistoryResponse> {
+	const response = await fetch(`${API_BASE}/api/chat/history/${sessionId}`);
+	if (!response.ok) {
+		throw new Error(`No se pudo cargar el historial de la sesión ${sessionId}`);
+	}
+	return response.json();
+}
+
+/**
+ * Lista todas las sesiones de chat almacenadas en la base de datos.
+ */
+export async function listChatSessions(): Promise<FastApiSessionSummary[]> {
+	const response = await fetch(`${API_BASE}/api/chat/sessions`);
+	if (!response.ok) {
+		throw new Error('No se pudieron obtener las sesiones de chat.');
+	}
+	return response.json();
+}

@@ -19,8 +19,9 @@
 	let isTyping = $state(false);
 	let chatContainer = $state<HTMLDivElement | null>(null);
 	let errorMessage = $state('');
+	let currentSessionId = $state<string | null>(null);
 
-	/** Historial de conversación en el formato que espera la API de Gemini */
+	/** Historial de conversación en memoria de la UI */
 	let geminiHistory = $state<GeminiChatMessage[]>([]);
 
 	async function scrollToBottom() {
@@ -33,6 +34,7 @@
 	function resetChat() {
 		messages = [...initialChatMessages];
 		geminiHistory = [];
+		currentSessionId = null;
 		errorMessage = '';
 		scrollToBottom();
 	}
@@ -59,25 +61,27 @@
 		errorMessage = '';
 		scrollToBottom();
 
-		// 2. Construir contexto para Gemini
+		// 2. Construir contexto para el Agente
 		const contextPrefix = `[Contexto actual del simulador — Materia: ${subject.name} (${subject.catedra}), ` +
 			`Prof: ${subject.professor}, P1: ${subject.p1}/${subject.p1Max}, Lab: ${subject.lab}/${subject.labMax}, ` +
 			`Asistencia: ${subject.attendanceRate}%, Tema crítico: ${subject.criticalTopic}]\n\n`;
 
-		// Solo inyectar contexto en el primer mensaje del usuario
+		// Solo inyectar contexto institucional en el primer mensaje de la sesión
 		const userContent = geminiHistory.length === 0
 			? contextPrefix + text
 			: text;
 
 		geminiHistory = [...geminiHistory, { role: 'user', content: userContent }];
 
-		// 3. Llamar al LLM
+		// 3. Llamar al Agente FastAPI con memoria en SQLite
 		isTyping = true;
 
 		try {
-			const responseText = await geminiChat(geminiHistory);
+			const result = await geminiChat(userContent, currentSessionId);
+			currentSessionId = result.sessionId;
+			const responseText = result.reply;
 
-			// Guardar respuesta en historial de Gemini
+			// Guardar respuesta en historial de la UI
 			geminiHistory = [...geminiHistory, { role: 'model', content: responseText }];
 
 			// Crear mensaje de UI del asistente
@@ -85,7 +89,7 @@
 				id: `ai-${Date.now()}`,
 				sender: 'assistant',
 				text: responseText,
-				timestamp: 'Ahora • Copiloto FIUNA (Gemini)'
+				timestamp: 'Ahora • Copiloto FIUNA (FastAPI + SQLite)'
 			};
 
 			messages = [...messages, aiMsg];
@@ -93,13 +97,13 @@
 			const errText = err instanceof Error ? err.message : 'Error desconocido';
 			errorMessage = errText;
 
-			// Eliminar el último mensaje del historial de Gemini (el user) si falló
+			// Eliminar el último mensaje si falló
 			geminiHistory = geminiHistory.slice(0, -1);
 
 			const errorMsg: ChatMessage = {
 				id: `error-${Date.now()}`,
 				sender: 'assistant',
-				text: `⚠️ No pude conectar con el modelo de IA. Detalle: ${errText}`,
+				text: `⚠️ No pude conectar con el Agente FastAPI. Detalle: ${errText}`,
 				timestamp: 'Ahora • Sistema'
 			};
 
@@ -135,7 +139,7 @@
 					<span
 						class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-secondary text-on-secondary uppercase"
 					>
-						Gemini LLM
+						FastAPI + Gemini
 					</span>
 				</div>
 				<span class="font-label-sm text-label-sm text-secondary-fixed opacity-90">

@@ -26,6 +26,15 @@ mi-app-svelte/build/
 mi-app-svelte/.env
 mi-app-svelte/.env.*
 !mi-app-svelte/.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Base de datos SQLite
+*.db
+*.sqlite
+*.sqlite3
+backend/*.db
 
 # Archivos del sistema operativo
 .DS_Store
