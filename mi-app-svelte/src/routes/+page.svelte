@@ -1,32 +1,181 @@
-﻿<script lang="ts">
+<script lang="ts">
     import { academicState } from "../lib/academic-state.svelte";
+    import { authState } from "../lib/auth-state.svelte";
     import { goto } from "$app/navigation";
+    import {
+        loginLocalUser,
+        registerLocalUser,
+        linkInswebAccount,
+        type LinkInswebResult
+    } from "../lib/services/auth";
 
-    let fiunaUser = $state("a.benitez");
-    let fiunaPassword = $state("••••••••••••");
-    let inswebCi = $state("4.819.302");
-    let inswebPass = $state("••••••••");
-    let selectedCareer = $state("electromecanica");
+    // Pestaña activa cuando no está autenticado: 'login' | 'register'
+    let activeAuthTab = $state<"login" | "register">("login");
+    const user = $derived(authState.user);
 
+    // Formulario de Inicio de Sesión Local
+    let loginIdentifier = $state("");
+    let loginPassword = $state("");
+    let isLoggingIn = $state(false);
+    let loginError = $state<string | null>(null);
+
+    // Formulario de Registro Local
+    let regNombre = $state("");
+    let regUsuario = $state("");
+    let regCedula = $state("");
+    let regPassword = $state("");
+    let regConfirmPassword = $state("");
+    let regCarrera = $state("Ingeniería Electromecánica");
+    let isRegistering = $state(false);
+    let registerError = $state<string | null>(null);
+
+    // Formulario de Sincronización / Vinculación con InsWeb
+    let inswebPin = $state("");
     let isSyncing = $state(false);
     let syncSuccess = $state(false);
+    let syncError = $state<string | null>(null);
+    let syncDetails = $state<LinkInswebResult | null>(null);
 
-    function handleSyncSubmit(event: SubmitEvent): void {
+    const carrerasDisponibles = [
+        "Ingeniería Electromecánica",
+        "Ingeniería Civil",
+        "Ingeniería Industrial",
+        "Ingeniería Electrónica",
+        "Ingeniería Mecatrónica",
+        "Ingeniería Geográfica y Ambiental"
+    ];
+
+    async function handleLoginSubmit(event: SubmitEvent): Promise<void> {
         event.preventDefault();
-        if (isSyncing) return;
+        if (isLoggingIn) return;
+
+        loginError = null;
+        if (!loginIdentifier.trim() || !loginPassword) {
+            loginError = "Por favor ingresa tu identificador (usuario o cédula) y contraseña.";
+            return;
+        }
+
+        isLoggingIn = true;
+        try {
+            const res = await loginLocalUser({
+                identificador: loginIdentifier.trim(),
+                password: loginPassword
+            });
+
+            authState.login({
+                id: res.id,
+                usuario: res.usuario,
+                cedula: res.cedula,
+                nombre: res.nombre,
+                carrera: res.carrera,
+                isSynced: res.is_synced,
+                lastSync: res.last_sync ? new Date(res.last_sync).toLocaleString() : null
+            });
+
+            loginPassword = "";
+            if (res.is_synced) {
+                setTimeout(() => {
+                    academicState.activeNav = "dashboard";
+                    goto("/dashboard");
+                }, 600);
+            }
+        } catch (err: unknown) {
+            loginError = err instanceof Error ? err.message : "Error al iniciar sesión local.";
+        } finally {
+            isLoggingIn = false;
+        }
+    }
+
+    async function handleRegisterSubmit(event: SubmitEvent): Promise<void> {
+        event.preventDefault();
+        if (isRegistering) return;
+
+        registerError = null;
+
+        const cleanCedula = regCedula.replace(/[^0-9]/g, "");
+        if (!regNombre.trim() || !regUsuario.trim() || !cleanCedula || !regPassword) {
+            registerError = "Todos los campos marcados son obligatorios.";
+            return;
+        }
+
+        if (regPassword.length < 4) {
+            registerError = "La contraseña debe contener al menos 4 caracteres.";
+            return;
+        }
+
+        if (regPassword !== regConfirmPassword) {
+            registerError = "Las contraseñas no coinciden.";
+            return;
+        }
+
+        isRegistering = true;
+        try {
+            const res = await registerLocalUser({
+                nombre: regNombre.trim(),
+                usuario: regUsuario.trim(),
+                cedula: cleanCedula,
+                password: regPassword,
+                carrera: regCarrera
+            });
+
+            authState.login({
+                id: res.id,
+                usuario: res.usuario,
+                cedula: res.cedula,
+                nombre: res.nombre,
+                carrera: res.carrera,
+                isSynced: res.is_synced,
+                lastSync: null
+            });
+
+            regPassword = "";
+            regConfirmPassword = "";
+        } catch (err: unknown) {
+            registerError = err instanceof Error ? err.message : "Error al registrar la cuenta local.";
+        } finally {
+            isRegistering = false;
+        }
+    }
+
+    async function handleLinkInsweb(event: SubmitEvent): Promise<void> {
+        event.preventDefault();
+        if (isSyncing || !authState.user) return;
+
+        syncError = null;
+        syncSuccess = false;
+        syncDetails = null;
+
+        if (!inswebPin) {
+            syncError = "Por favor ingresa la clave / PIN del portal InsWeb.";
+            return;
+        }
 
         isSyncing = true;
-        syncSuccess = false;
+        academicState.isRescraping = true;
+        academicState.pipelineStatus = "Iniciando scraper silencioso...";
 
-        setTimeout(() => {
-            isSyncing = false;
+        try {
+            const res = await linkInswebAccount(authState.user.cedula, inswebPin);
+            syncDetails = res;
             syncSuccess = true;
 
-            setTimeout(() => {
-                academicState.activeNav = "dashboard-academico";
-                goto("/dashboard");
-            }, 900);
-        }, 1500);
+            const nowStr = new Date().toLocaleString();
+            authState.setSynced(true, nowStr);
+            academicState.pipelineStatus = "Sincronización Completada";
+
+            inswebPin = "";
+        } catch (err: unknown) {
+            syncError = err instanceof Error ? err.message : "Error al vincular con InsWeb.";
+            academicState.pipelineStatus = "Error en extracción";
+        } finally {
+            isSyncing = false;
+            academicState.isRescraping = false;
+        }
+    }
+
+    function handleEnterGuestMode(): void {
+        academicState.activeNav = "dashboard";
+        goto("/dashboard");
     }
 </script>
 
@@ -44,14 +193,12 @@
                 <span
                     class="inline-flex items-center justify-center w-6 h-6 rounded bg-primary text-on-primary"
                 >
-                    <span class="material-symbols-outlined text-sm"
-                        >terminal</span
-                    >
+                    <span class="material-symbols-outlined text-sm">terminal</span>
                 </span>
                 <span
                     class="font-label-sm text-label-sm uppercase tracking-wider text-secondary font-semibold"
                 >
-                    Submódulo de Extracción Segura
+                    Submódulo de Autenticación &amp; Extracción Segura
                 </span>
             </div>
             <h1
@@ -62,29 +209,24 @@
             <p
                 class="font-body-md text-body-md text-on-surface-variant max-w-2xl"
             >
-                Conexión directa criptográfica con los servidores centrales de
-                la Universidad Nacional de Asuncion (<code
+                Gestión de cuentas locales encriptadas e ingesta automatizada sin interfaz gráfica
+                con los servidores centrales de la UNA (<code
                     class="font-code-num text-code-num text-on-surface bg-surface-container-high px-1 py-0.5 rounded"
                     >insweb.ing.una.py</code
-                >) para la ingesta y análisis continuo del récord académico.
+                >).
             </p>
         </div>
 
         <div
-            class="flex items-center gap-space-sm bg-surface-container-lowest p-space-sm rounded-xl shadow-sm self-start md:self-auto"
+            class="flex items-center gap-space-sm bg-surface-container-lowest p-space-sm rounded-xl shadow-sm self-start md:self-auto border border-outline-variant/30"
         >
-            <div
-                class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"
-            ></div>
+            <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
             <div class="flex flex-col">
-                <span
-                    class="font-label-sm text-label-sm text-on-surface-variant"
-                    >Conector Automatizado</span
+                <span class="font-label-sm text-label-sm text-on-surface-variant"
+                    >Base de Datos SQLite</span
                 >
-                <span
-                    class="font-code-num text-code-num font-semibold text-on-surface"
-                >
-                    TLS 1.3 / FIUNA-SECURE
+                <span class="font-code-num text-code-num font-semibold text-on-surface">
+                    copilot.db / PBKDF2-HMAC
                 </span>
             </div>
         </div>
@@ -92,288 +234,477 @@
 
     <!-- Grilla Principal -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg items-start">
-        <!-- Columna Izquierda: Formulario de Credenciales -->
+        <!-- Columna Izquierda: Formulario de Autenticación / Vinculación -->
         <div class="lg:col-span-6 flex flex-col gap-space-lg">
             <div
-                class="bg-surface-container-lowest rounded-xl shadow-sm p-space-xl flex flex-col gap-space-lg relative overflow-hidden"
+                class="bg-surface-container-lowest rounded-xl shadow-sm p-4 sm:p-space-md lg:p-space-xl flex flex-col gap-space-lg relative overflow-hidden border border-outline-variant/30"
             >
                 <div
                     class="absolute -top-12 -right-12 w-48 h-48 bg-primary/5 rounded-full blur-2xl pointer-events-none"
                 ></div>
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-space-sm">
-                        <span
-                            class="material-symbols-outlined text-primary text-2xl"
-                            >passkey</span
-                        >
-                        <div>
-                            <h2
-                                class="font-headline-sm text-headline-sm text-on-surface font-bold"
-                            >
-                                Credenciales Académicas
-                            </h2>
-                            <span
-                                class="font-body-sm text-body-sm text-on-surface-variant"
-                            >
-                                Autenticación Unificada de la Facultad
-                            </span>
-                        </div>
-                    </div>
-                    <span
-                        class="px-space-sm py-1 bg-surface-container text-on-surface-variant rounded font-label-sm text-label-sm font-semibold uppercase"
-                    >
-                        Paso 1 de 2
-                    </span>
-                </div>
 
-                <form
-                    class="flex flex-col gap-space-md"
-                    onsubmit={handleSyncSubmit}
-                >
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
-                        <div class="flex flex-col gap-space-xs">
-                            <label
-                                class="font-label-sm text-label-sm text-on-surface font-semibold"
-                                for="fiuna-user"
-                            >
-                                Usuario General FIUNA
-                            </label>
-                            <div class="relative flex items-center">
-                                <span
-                                    class="material-symbols-outlined absolute left-3 text-outline text-lg pointer-events-none"
+                {#if !user}
+                    <!-- ========================================== -->
+                    <!-- VISTA NO AUTENTICADO: TABS LOGIN / REGISTRO -->
+                    <!-- ========================================== -->
+                    <div class="flex flex-col gap-space-md">
+                        <div class="flex items-center justify-between pb-space-xs">
+                            <div class="flex items-center gap-space-sm">
+                                <span class="material-symbols-outlined text-primary text-2xl"
+                                    >lock_person</span
                                 >
-                                    badge
-                                </span>
-                                <input
-                                    class="w-full bg-surface-container-low text-on-surface font-body-md text-body-md pl-10 pr-3 py-2 rounded focus:outline-none focus:bg-surface-container-lowest focus:shadow-md transition-all"
-                                    id="fiuna-user"
-                                    placeholder="ej. j.perez"
-                                    required
-                                    type="text"
-                                    bind:value={fiunaUser}
-                                />
-                            </div>
-                        </div>
-
-                        <div class="flex flex-col gap-space-xs">
-                            <label
-                                class="font-label-sm text-label-sm text-on-surface font-semibold"
-                                for="fiuna-password"
-                            >
-                                Contraseña Institucional
-                            </label>
-                            <div class="relative flex items-center">
-                                <span
-                                    class="material-symbols-outlined absolute left-3 text-outline text-lg pointer-events-none"
-                                >
-                                    lock
-                                </span>
-                                <input
-                                    class="w-full bg-surface-container-low text-on-surface font-body-md text-body-md pl-10 pr-3 py-2 rounded focus:outline-none focus:bg-surface-container-lowest focus:shadow-md transition-all"
-                                    id="fiuna-password"
-                                    placeholder="Contraseña institucional"
-                                    required
-                                    type="password"
-                                    bind:value={fiunaPassword}
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div
-                        class="bg-surface-container-low rounded-xl p-space-md flex flex-col gap-space-md relative overflow-hidden"
-                    >
-                        <div class="flex items-center justify-between">
-                            <div
-                                class="flex items-center gap-space-xs text-primary"
-                            >
-                                <span class="material-symbols-outlined text-lg"
-                                    >cloud_sync</span
-                                >
-                                <span
-                                    class="font-label-md text-label-md font-bold tracking-tight"
-                                >
-                                    Vinculación de Credenciales
-                                    insweb.ing.una.py
-                                </span>
-                            </div>
-                            <span
-                                class="material-symbols-outlined text-secondary text-base"
-                                >verified_user</span
-                            >
-                        </div>
-                        <p
-                            class="font-body-sm text-body-sm text-on-surface-variant"
-                        >
-                            Requerido para la extracción en segundo plano de
-                            actas finales, asistencia e historial de malla
-                            curricular.
-                        </p>
-
-                        <div
-                            class="grid grid-cols-1 md:grid-cols-2 gap-space-sm"
-                        >
-                            <div class="flex flex-col gap-space-xs">
-                                <label
-                                    class="font-label-sm text-label-sm text-on-surface font-medium"
-                                    for="insweb-ci"
-                                >
-                                    Cédula / Matrícula InsWeb
-                                </label>
-                                <div class="relative flex items-center">
-                                    <span
-                                        class="material-symbols-outlined absolute left-3 text-outline text-lg pointer-events-none"
-                                    >
-                                        fingerprint
+                                <div>
+                                    <h2 class="font-headline-sm text-headline-sm text-on-surface font-bold">
+                                        Acceso Local FIUNA
+                                    </h2>
+                                    <span class="font-body-sm text-body-sm text-on-surface-variant">
+                                        Base de datos local independiente
                                     </span>
-                                    <input
-                                        class="w-full bg-surface-container-lowest text-on-surface font-code-num text-code-num pl-10 pr-3 py-2 rounded shadow-sm focus:outline-none focus:bg-surface-container-lowest transition-all"
-                                        id="insweb-ci"
-                                        placeholder="ej. 4580214"
-                                        required
-                                        type="text"
-                                        bind:value={inswebCi}
-                                    />
                                 </div>
                             </div>
-
-                            <div class="flex flex-col gap-space-xs">
-                                <label
-                                    class="font-label-sm text-label-sm text-on-surface font-medium"
-                                    for="insweb-pass"
-                                >
-                                    Clave del Portal InsWeb
-                                </label>
-                                <div class="relative flex items-center">
-                                    <span
-                                        class="material-symbols-outlined absolute left-3 text-outline text-lg pointer-events-none"
-                                    >
-                                        key
-                                    </span>
-                                    <input
-                                        class="w-full bg-surface-container-lowest text-on-surface font-code-num text-code-num pl-10 pr-3 py-2 rounded shadow-sm focus:outline-none transition-all"
-                                        id="insweb-pass"
-                                        placeholder="Clave de acceso al sistema"
-                                        required
-                                        type="password"
-                                        bind:value={inswebPass}
-                                    />
-                                </div>
-                            </div>
+                            <span class="px-space-sm py-1 bg-surface-container text-on-surface-variant rounded font-label-sm text-label-sm font-semibold uppercase">
+                                Paso 1: Autenticación
+                            </span>
                         </div>
 
-                        <div class="flex flex-col gap-space-xs">
-                            <label
-                                class="font-label-sm text-label-sm text-on-surface font-medium"
-                                for="career-select"
+                        <!-- Selector de Pestañas -->
+                        <div class="grid grid-cols-2 p-1 bg-surface-container-low rounded-xl">
+                            <button
+                                type="button"
+                                class="py-2 text-center font-label-md text-label-md font-semibold rounded-lg transition-all {activeAuthTab === 'login'
+                                    ? 'bg-surface-container-lowest text-primary shadow-sm'
+                                    : 'text-on-surface-variant hover:text-on-surface'}"
+                                onclick={() => {
+                                    activeAuthTab = "login";
+                                    loginError = null;
+                                }}
                             >
-                                Carrera de Ingeniería
-                            </label>
-                            <div class="relative flex items-center">
-                                <span
-                                    class="material-symbols-outlined absolute left-3 text-outline text-lg pointer-events-none"
+                                Iniciar Sesión
+                            </button>
+                            <button
+                                type="button"
+                                class="py-2 text-center font-label-md text-label-md font-semibold rounded-lg transition-all {activeAuthTab === 'register'
+                                    ? 'bg-surface-container-lowest text-primary shadow-sm'
+                                    : 'text-on-surface-variant hover:text-on-surface'}"
+                                onclick={() => {
+                                    activeAuthTab = "register";
+                                    registerError = null;
+                                }}
+                            >
+                                Crear Cuenta
+                            </button>
+                        </div>
+
+                        {#if activeAuthTab === "login"}
+                            <!-- Formulario de Iniciar Sesión -->
+                            <form
+                                class="flex flex-col gap-space-md pt-space-xs"
+                                onsubmit={handleLoginSubmit}
+                            >
+                                <div class="flex flex-col gap-space-xs">
+                                    <label
+                                        class="font-label-sm text-label-sm text-on-surface font-semibold"
+                                        for="login-identifier"
+                                    >
+                                        Usuario o Cédula de Identidad
+                                    </label>
+                                    <div class="relative flex items-center">
+                                        <span class="material-symbols-outlined absolute left-3 text-outline text-lg pointer-events-none">
+                                            person
+                                        </span>
+                                        <input
+                                            class="w-full bg-surface-container-low text-on-surface font-body-md text-body-md pl-10 pr-3 py-2.5 rounded-lg border border-transparent focus:border-primary/40 focus:bg-surface-container-lowest focus:shadow-sm transition-all"
+                                            id="login-identifier"
+                                            placeholder="ej. 4580214 o j.perez"
+                                            required
+                                            type="text"
+                                            bind:value={loginIdentifier}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-col gap-space-xs">
+                                    <label
+                                        class="font-label-sm text-label-sm text-on-surface font-semibold"
+                                        for="login-password"
+                                    >
+                                        Contraseña Local
+                                    </label>
+                                    <div class="relative flex items-center">
+                                        <span class="material-symbols-outlined absolute left-3 text-outline text-lg pointer-events-none">
+                                            key
+                                        </span>
+                                        <input
+                                            class="w-full bg-surface-container-low text-on-surface font-body-md text-body-md pl-10 pr-3 py-2.5 rounded-lg border border-transparent focus:border-primary/40 focus:bg-surface-container-lowest focus:shadow-sm transition-all"
+                                            id="login-password"
+                                            placeholder="Tu contraseña personal"
+                                            required
+                                            type="password"
+                                            bind:value={loginPassword}
+                                        />
+                                    </div>
+                                </div>
+
+                                {#if loginError}
+                                    <div class="p-space-sm rounded-lg bg-error/10 border border-error/30 text-error font-body-sm text-body-sm flex items-start gap-space-xs">
+                                        <span class="material-symbols-outlined text-base mt-0.5">error</span>
+                                        <span class="flex-1">{loginError}</span>
+                                    </div>
+                                {/if}
+
+                                <button
+                                    class="w-full py-3 px-space-md bg-primary hover:bg-primary-container text-on-primary rounded-lg font-label-md text-label-md uppercase tracking-wider flex items-center justify-center gap-space-sm transition-all shadow-md active:scale-[0.99] mt-space-xs"
+                                    disabled={isLoggingIn}
+                                    type="submit"
                                 >
-                                    school
-                                </span>
-                                <select
-                                    class="w-full bg-surface-container-lowest text-on-surface font-body-md text-body-md pl-10 pr-8 py-2 rounded shadow-sm focus:outline-none appearance-none cursor-pointer"
-                                    id="career-select"
-                                    bind:value={selectedCareer}
+                                    {#if isLoggingIn}
+                                        <span class="material-symbols-outlined text-lg animate-spin">autorenew</span>
+                                        <span>Autenticando...</span>
+                                    {:else}
+                                        <span class="material-symbols-outlined text-lg">login</span>
+                                        <span>Iniciar Sesión Local</span>
+                                    {/if}
+                                </button>
+                            </form>
+                        {:else}
+                            <!-- Formulario de Crear Cuenta -->
+                            <form
+                                class="flex flex-col gap-space-md pt-space-xs"
+                                onsubmit={handleRegisterSubmit}
+                            >
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+                                    <div class="flex flex-col gap-space-xs">
+                                        <label
+                                            class="font-label-sm text-label-sm text-on-surface font-semibold"
+                                            for="reg-nombre"
+                                        >
+                                            Nombre Completo
+                                        </label>
+                                        <input
+                                            class="w-full bg-surface-container-low text-on-surface font-body-md text-body-md px-3 py-2.5 rounded-lg border border-transparent focus:border-primary/40 focus:bg-surface-container-lowest focus:shadow-sm transition-all"
+                                            id="reg-nombre"
+                                            placeholder="ej. Alejandro Benítez"
+                                            required
+                                            type="text"
+                                            bind:value={regNombre}
+                                        />
+                                    </div>
+
+                                    <div class="flex flex-col gap-space-xs">
+                                        <label
+                                            class="font-label-sm text-label-sm text-on-surface font-semibold"
+                                            for="reg-usuario"
+                                        >
+                                            Nombre de Usuario
+                                        </label>
+                                        <input
+                                            class="w-full bg-surface-container-low text-on-surface font-body-md text-body-md px-3 py-2.5 rounded-lg border border-transparent focus:border-primary/40 focus:bg-surface-container-lowest focus:shadow-sm transition-all"
+                                            id="reg-usuario"
+                                            placeholder="ej. abenitez"
+                                            required
+                                            type="text"
+                                            bind:value={regUsuario}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+                                    <div class="flex flex-col gap-space-xs">
+                                        <label
+                                            class="font-label-sm text-label-sm text-on-surface font-semibold"
+                                            for="reg-cedula"
+                                        >
+                                            Cédula de Identidad (Sin puntos)
+                                        </label>
+                                        <div class="relative flex items-center">
+                                            <span class="material-symbols-outlined absolute left-3 text-outline text-lg pointer-events-none">
+                                                badge
+                                            </span>
+                                            <input
+                                                class="w-full bg-surface-container-low text-on-surface font-code-num text-code-num pl-10 pr-3 py-2.5 rounded-lg border border-transparent focus:border-primary/40 focus:bg-surface-container-lowest focus:shadow-sm transition-all"
+                                                id="reg-cedula"
+                                                placeholder="ej. 4580214"
+                                                required
+                                                type="text"
+                                                bind:value={regCedula}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div class="flex flex-col gap-space-xs">
+                                        <label
+                                            class="font-label-sm text-label-sm text-on-surface font-semibold"
+                                            for="reg-carrera"
+                                        >
+                                            Carrera
+                                        </label>
+                                        <select
+                                            class="w-full bg-surface-container-low text-on-surface font-body-md text-body-md px-3 py-2.5 rounded-lg border border-transparent focus:border-primary/40 focus:bg-surface-container-lowest focus:shadow-sm transition-all cursor-pointer"
+                                            id="reg-carrera"
+                                            bind:value={regCarrera}
+                                        >
+                                            {#each carrerasDisponibles as car}
+                                                <option value={car}>{car}</option>
+                                            {/each}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+                                    <div class="flex flex-col gap-space-xs">
+                                        <label
+                                            class="font-label-sm text-label-sm text-on-surface font-semibold"
+                                            for="reg-password"
+                                        >
+                                            Contraseña
+                                        </label>
+                                        <input
+                                            class="w-full bg-surface-container-low text-on-surface font-body-md text-body-md px-3 py-2.5 rounded-lg border border-transparent focus:border-primary/40 focus:bg-surface-container-lowest focus:shadow-sm transition-all"
+                                            id="reg-password"
+                                            placeholder="Mínimo 4 caracteres"
+                                            required
+                                            type="password"
+                                            bind:value={regPassword}
+                                        />
+                                    </div>
+
+                                    <div class="flex flex-col gap-space-xs">
+                                        <label
+                                            class="font-label-sm text-label-sm text-on-surface font-semibold"
+                                            for="reg-confirm"
+                                        >
+                                            Confirmar Contraseña
+                                        </label>
+                                        <input
+                                            class="w-full bg-surface-container-low text-on-surface font-body-md text-body-md px-3 py-2.5 rounded-lg border border-transparent focus:border-primary/40 focus:bg-surface-container-lowest focus:shadow-sm transition-all"
+                                            id="reg-confirm"
+                                            placeholder="Repite la contraseña"
+                                            required
+                                            type="password"
+                                            bind:value={regConfirmPassword}
+                                        />
+                                    </div>
+                                </div>
+
+                                {#if registerError}
+                                    <div class="p-space-sm rounded-lg bg-error/10 border border-error/30 text-error font-body-sm text-body-sm flex items-start gap-space-xs">
+                                        <span class="material-symbols-outlined text-base mt-0.5">error</span>
+                                        <span class="flex-1">{registerError}</span>
+                                    </div>
+                                {/if}
+
+                                <button
+                                    class="w-full py-3 px-space-md bg-secondary hover:bg-secondary-container text-on-secondary hover:text-on-secondary-container rounded-lg font-label-md text-label-md uppercase tracking-wider flex items-center justify-center gap-space-sm transition-all shadow-md active:scale-[0.99] mt-space-xs"
+                                    disabled={isRegistering}
+                                    type="submit"
                                 >
-                                    <option value="electromecanica"
-                                        >Ingeniería Electromecánica (Plan 2013)</option
-                                    >
-                                    <option value="civil"
-                                        >Ingeniería Civil</option
-                                    >
-                                    <option value="industrial"
-                                        >Ingeniería Industrial</option
-                                    >
-                                    <option value="electronica"
-                                        >Ingeniería Electrónica</option
-                                    >
-                                    <option value="mecatronica"
-                                        >Ingeniería Mecatrónica</option
-                                    >
-                                    <option value="geografica"
-                                        >Ingeniería Geográfica y Ambiental</option
-                                    >
-                                </select>
-                                <span
-                                    class="material-symbols-outlined absolute right-3 text-outline text-base pointer-events-none"
-                                >
-                                    expand_more
-                                </span>
-                            </div>
+                                    {#if isRegistering}
+                                        <span class="material-symbols-outlined text-lg animate-spin">autorenew</span>
+                                        <span>Guardando Cuenta...</span>
+                                    {:else}
+                                        <span class="material-symbols-outlined text-lg">person_add</span>
+                                        <span>Registrar Cuenta Local</span>
+                                    {/if}
+                                </button>
+                            </form>
+                        {/if}
+
+                        <!-- Modo Invitado Directo -->
+                        <div class="pt-space-sm border-t border-outline-variant/30 flex items-center justify-between">
+                            <span class="font-body-sm text-body-sm text-on-surface-variant">
+                                ¿Deseas explorar sin credenciales?
+                            </span>
+                            <button
+                                type="button"
+                                class="font-label-sm text-label-sm text-primary hover:underline flex items-center gap-1 font-semibold"
+                                onclick={handleEnterGuestMode}
+                            >
+                                Entrar como Invitado
+                                <span class="material-symbols-outlined text-sm">arrow_forward</span>
+                            </button>
                         </div>
                     </div>
+                {:else}
+                    <!-- ========================================== -->
+                    <!-- VISTA AUTENTICADO: PERFIL + FORM VINCULAR  -->
+                    <!-- ========================================== -->
+                    <div class="flex flex-col gap-space-lg">
+                        <!-- Tarjeta de Perfil Local Activo -->
+                        <div class="p-space-lg rounded-xl bg-surface-container-low border border-outline-variant/40 flex flex-col gap-space-md">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+                                <div class="flex items-center gap-space-sm">
+                                    <div class="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-lg border border-primary/20">
+                                        {user.nombre.slice(0, 2).toUpperCase()}
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <div class="flex items-center gap-2">
+                                            <h3 class="font-headline-sm text-headline-sm text-on-surface font-bold">
+                                                {user.nombre}
+                                            </h3>
+                                            {#if user.isSynced}
+                                                <span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 font-label-sm text-label-sm font-semibold flex items-center gap-1">
+                                                    <span class="material-symbols-outlined text-xs">verified</span>
+                                                    InsWeb Vinculado
+                                                </span>
+                                            {:else}
+                                                <span class="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 font-label-sm text-label-sm font-semibold flex items-center gap-1">
+                                                    <span class="material-symbols-outlined text-xs">pending</span>
+                                                    Pendiente de Scraping
+                                                </span>
+                                            {/if}
+                                        </div>
+                                        <p class="font-body-sm text-body-sm text-on-surface-variant">
+                                            C.I. {user.cedula} • {user.carrera}
+                                            {#if user.usuario}
+                                                • <code class="text-xs text-primary">@{user.usuario}</code>
+                                            {/if}
+                                        </p>
+                                    </div>
+                                </div>
 
-                    <div
-                        class="bg-surface-container-high/60 rounded-lg p-space-sm flex items-start gap-space-sm"
-                    >
-                        <span
-                            class="material-symbols-outlined text-secondary text-lg mt-0.5"
-                            >lock_clock</span
-                        >
-                        <div class="flex flex-col">
-                            <span
-                                class="font-label-sm text-label-sm text-on-surface font-semibold"
-                            >
-                                Cifrado de extremo a extremo (E2EE)
-                            </span>
-                            <p
-                                class="font-body-sm text-body-sm text-on-surface-variant"
-                            >
-                                Las credenciales del portal InsWeb son
-                                procesadas localmente en memoria volátil de
-                                sesión y nunca se conservan en texto plano en la
-                                infraestructura central de IA.
+                                <button
+                                    type="button"
+                                    class="py-1.5 px-space-sm border border-outline-variant text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg font-label-sm text-label-sm flex items-center gap-1 self-start sm:self-auto transition-colors"
+                                    onclick={() => authState.logout()}
+                                >
+                                    <span class="material-symbols-outlined text-base">logout</span>
+                                    Cerrar Sesión
+                                </button>
+                            </div>
+
+                            {#if user.lastSync}
+                                <div class="flex items-center gap-2 text-on-surface-variant font-label-sm text-label-sm pt-space-xs border-t border-outline-variant/30">
+                                    <span class="material-symbols-outlined text-xs text-emerald-600">sync_saved_locally</span>
+                                    <span>Última sincronización con InsWeb: <strong class="text-on-surface">{user.lastSync}</strong></span>
+                                </div>
+                            {/if}
+
+                            <div class="flex items-center gap-space-sm pt-space-xs">
+                                <button
+                                    type="button"
+                                    class="flex-1 py-2.5 px-space-md bg-primary hover:bg-primary-container text-on-primary rounded-lg font-label-md text-label-md uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-sm"
+                                    onclick={() => {
+                                        academicState.activeNav = "dashboard";
+                                        goto("/dashboard");
+                                    }}
+                                >
+                                    <span class="material-symbols-outlined text-lg">dashboard</span>
+                                    Ir al Dashboard Académico
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Formulario de Vinculación / Sincronización InsWeb -->
+                        <div class="bg-surface-container-low rounded-xl p-space-lg flex flex-col gap-space-md relative overflow-hidden border border-outline-variant/30">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-space-xs text-primary">
+                                    <span class="material-symbols-outlined text-xl">cloud_sync</span>
+                                    <span class="font-label-md text-label-md font-bold tracking-tight">
+                                        {user.isSynced ? "Re-sincronizar Calificaciones InsWeb" : "Paso 2: Vincular con Récord InsWeb"}
+                                    </span>
+                                </div>
+                                <span class="material-symbols-outlined text-secondary text-base">security</span>
+                            </div>
+
+                            <p class="font-body-sm text-body-sm text-on-surface-variant">
+                                El scraper silencioso (headless Chromium) extraerá tus materias cursadas, inscripciones actuales y calificaciones oficiales desde <code class="font-code-num text-xs bg-surface-container px-1 py-0.5 rounded">insweb.ing.una.py</code> y las almacenará en tu base de datos SQLite asociada a tu C.I. <strong>{user.cedula}</strong>.
                             </p>
+
+                            <form class="flex flex-col gap-space-md" onsubmit={handleLinkInsweb}>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+                                    <div class="flex flex-col gap-space-xs">
+                                        <label class="font-label-sm text-label-sm text-on-surface font-medium" for="sync-cedula">
+                                            Cédula Asociada (Bloqueada)
+                                        </label>
+                                        <div class="relative flex items-center">
+                                            <span class="material-symbols-outlined absolute left-3 text-outline text-lg pointer-events-none">
+                                                lock
+                                            </span>
+                                            <input
+                                                class="w-full bg-surface-container-lowest text-on-surface-variant font-code-num text-code-num pl-10 pr-3 py-2.5 rounded-lg border border-outline-variant/50 cursor-not-allowed opacity-80"
+                                                id="sync-cedula"
+                                                type="text"
+                                                disabled
+                                                value={user.cedula}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div class="flex flex-col gap-space-xs">
+                                        <label class="font-label-sm text-label-sm text-on-surface font-medium" for="sync-pin">
+                                            PIN / Clave de InsWeb
+                                        </label>
+                                        <div class="relative flex items-center">
+                                            <span class="material-symbols-outlined absolute left-3 text-outline text-lg pointer-events-none">
+                                                key
+                                            </span>
+                                            <input
+                                                class="w-full bg-surface-container-lowest text-on-surface font-code-num text-code-num pl-10 pr-3 py-2.5 rounded-lg border border-transparent focus:border-primary/40 focus:shadow-sm transition-all"
+                                                id="sync-pin"
+                                                placeholder="Tu PIN secreto de InsWeb"
+                                                required
+                                                type="password"
+                                                bind:value={inswebPin}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="bg-surface-container/70 rounded-lg p-space-sm flex items-start gap-space-sm">
+                                    <span class="material-symbols-outlined text-secondary text-base mt-0.5">verified_user</span>
+                                    <p class="font-body-sm text-body-sm text-on-surface-variant">
+                                        Tu PIN de InsWeb nunca se almacena en la base de datos local ni en servidores externos; solo se utiliza durante el proceso de extracción en memoria.
+                                    </p>
+                                </div>
+
+                                <button
+                                    class="w-full py-3 px-space-md text-on-primary rounded-lg font-label-md text-label-md uppercase tracking-wider flex items-center justify-center gap-space-sm transition-all shadow-md active:scale-[0.99] {syncSuccess
+                                        ? 'bg-emerald-600'
+                                        : 'bg-primary hover:bg-primary-container'}"
+                                    disabled={isSyncing}
+                                    type="submit"
+                                >
+                                    {#if isSyncing}
+                                        <span class="material-symbols-outlined text-lg animate-spin">autorenew</span>
+                                        <span>Extrayendo con Headless Playwright...</span>
+                                    {:else if syncSuccess}
+                                        <span class="material-symbols-outlined text-lg">check_circle</span>
+                                        <span>¡Récord Académico Vinculado con Éxito!</span>
+                                    {:else}
+                                        <span class="material-symbols-outlined text-lg">cloud_download</span>
+                                        <span>{user.isSynced ? "Actualizar Récord Académico" : "Vincular y Extraer Datos de InsWeb"}</span>
+                                    {/if}
+                                </button>
+
+                                {#if syncSuccess && syncDetails}
+                                    <div class="p-space-md rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 font-body-sm text-body-sm flex flex-col gap-1">
+                                        <div class="flex items-center gap-2 font-bold">
+                                            <span class="material-symbols-outlined text-base">check_circle</span>
+                                            <span>Sincronización Completada en SQLite</span>
+                                        </div>
+                                        <p class="text-xs pl-6">
+                                            Se registraron <strong>{syncDetails.inscripciones_count}</strong> inscripciones vigentes, <strong>{syncDetails.parciales_count}</strong> parciales y <strong>{syncDetails.notas_count}</strong> actas de materias aprobadas/cursadas.
+                                        </p>
+                                    </div>
+                                {/if}
+
+                                {#if syncError}
+                                    <div class="p-space-sm rounded-lg bg-error/10 border border-error/30 text-error font-body-sm text-body-sm flex items-start gap-space-xs">
+                                        <span class="material-symbols-outlined text-base mt-0.5">error</span>
+                                        <span class="flex-1">{syncError}</span>
+                                    </div>
+                                {/if}
+                            </form>
                         </div>
                     </div>
+                {/if}
 
-                    <button
-                        class="w-full py-3 px-space-md text-on-primary rounded font-label-md text-label-md uppercase tracking-wider flex items-center justify-center gap-space-sm transition-all shadow-md active:scale-[0.99] mt-space-xs {syncSuccess
-                            ? 'bg-emerald-700'
-                            : 'bg-primary hover:bg-primary-container'}"
-                        disabled={isSyncing}
-                        type="submit"
-                    >
-                        <span
-                            class="material-symbols-outlined text-lg {isSyncing
-                                ? 'animate-spin'
-                                : ''}"
-                        >
-                            {#if isSyncing}
-                                autorenew
-                            {:else if syncSuccess}
-                                check_circle
-                            {:else}
-                                sync
-                            {/if}
-                        </span>
-                        <span>
-                            {#if isSyncing}
-                                Estableciendo túnel HTTPS seguro...
-                            {:else if syncSuccess}
-                                ¡Conexión Validada con Éxito!
-                            {:else}
-                                Sincronizar e Iniciar Sesión con InsWeb
-                            {/if}
-                        </span>
-                    </button>
-                </form>
-
-                <div
-                    class="flex items-center justify-between pt-space-xs border-t-0"
-                >
+                <div class="flex items-center justify-between pt-space-xs border-t border-outline-variant/30">
                     <a
                         class="font-label-sm text-label-sm text-secondary hover:text-on-surface flex items-center gap-1 transition-colors"
                         href="#ayuda"
                     >
-                        <span class="material-symbols-outlined text-sm"
-                            >help</span
-                        >
+                        <span class="material-symbols-outlined text-sm">help</span>
                         ¿Problemas con tu PIN de InsWeb?
                     </a>
                     <span class="font-label-sm text-label-sm text-outline">
@@ -383,11 +714,9 @@
             </div>
 
             <div
-                class="bg-surface-container rounded-xl p-space-lg flex items-center gap-space-md shadow-sm"
+                class="bg-surface-container rounded-xl p-space-lg flex items-center gap-space-md shadow-sm border border-outline-variant/30"
             >
-                <div
-                    class="h-16 w-16 rounded-xl overflow-hidden shrink-0 shadow-inner"
-                >
+                <div class="h-16 w-16 rounded-xl overflow-hidden shrink-0 shadow-inner">
                     <img
                         class="w-full h-full object-cover"
                         alt="Detalle de placa de circuito electrónico universitario"
@@ -398,18 +727,17 @@
                     <span
                         class="font-label-sm text-label-sm uppercase tracking-wider text-secondary font-semibold"
                     >
-                        Conector Híbrido
+                        Desacoplamiento Modular
                     </span>
                     <span
                         class="font-headline-sm text-headline-sm text-on-surface leading-tight font-bold"
                     >
-                        Arquitectura de Ingesta Asíncrona
+                        Arquitectura Preparada para API Central UNA
                     </span>
                     <p
                         class="font-body-sm text-body-sm text-on-surface-variant mt-0.5"
                     >
-                        La canalización optimiza consultas por lotes para evitar
-                        bloqueos por sobrecarga en el portal UNA.
+                        El sistema de autenticación local vincula las materias mediante la Cédula de Identidad. En el futuro, podrá conectarse de manera transparente al backend institucional de la universidad.
                     </p>
                 </div>
             </div>
@@ -418,15 +746,13 @@
         <!-- Columna Derecha: Monitor de Scraping en Vivo -->
         <div class="lg:col-span-6 flex flex-col gap-space-lg">
             <div
-                class="bg-surface-container-lowest rounded-xl shadow-sm p-space-xl flex flex-col gap-space-lg"
+                class="bg-surface-container-lowest rounded-xl shadow-sm p-4 sm:p-space-md lg:p-space-xl flex flex-col gap-space-lg border border-outline-variant/30"
             >
                 <div
                     class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm pb-space-xs"
                 >
                     <div class="flex items-center gap-space-sm">
-                        <div
-                            class="w-2.5 h-2.5 rounded-full bg-secondary"
-                        ></div>
+                        <div class="w-2.5 h-2.5 rounded-full bg-secondary"></div>
                         <div>
                             <h2
                                 class="font-headline-sm text-headline-sm text-on-surface font-bold"
@@ -436,7 +762,7 @@
                             <span
                                 class="font-body-sm text-body-sm text-on-surface-variant"
                             >
-                                Diagnóstico de Pipeline & Telemetría
+                                Diagnóstico de Pipeline &amp; Telemetría Headless
                             </span>
                         </div>
                     </div>
@@ -452,7 +778,7 @@
                         >
                             refresh
                         </span>
-                        <span>Forzar Re-scraping</span>
+                        <span>Verificar Latencia</span>
                     </button>
                 </div>
 
@@ -479,9 +805,7 @@
                         <span
                             class="font-label-sm text-label-sm text-emerald-700 flex items-center gap-0.5"
                         >
-                            <span class="material-symbols-outlined text-xs"
-                                >check_circle</span
-                            >
+                            <span class="material-symbols-outlined text-xs">check_circle</span>
                             Servidor Nominal
                         </span>
                     </div>
@@ -498,15 +822,13 @@
                             <span
                                 class="font-code-num text-headline-sm font-bold text-on-surface"
                             >
-                                Óptimo
+                                Silencioso
                             </span>
                         </div>
                         <span
                             class="font-label-sm text-label-sm text-secondary flex items-center gap-0.5"
                         >
-                            <span class="material-symbols-outlined text-xs"
-                                >bolt</span
-                            >
+                            <span class="material-symbols-outlined text-xs">bolt</span>
                             Headless Chromium
                         </span>
                     </div>
@@ -516,25 +838,19 @@
                     >
                         <span
                             class="font-label-sm text-label-sm uppercase text-outline"
-                            >Último Sync</span
+                            >Persistencia</span
                         >
                         <div class="flex items-baseline gap-1">
                             <span
                                 class="font-code-num text-headline-sm font-bold text-on-surface"
-                                >Hoy</span
-                            >
-                            <span
-                                class="font-code-num text-code-num text-on-surface-variant"
-                                >09:42</span
+                                >SQLite</span
                             >
                         </div>
                         <span
                             class="font-label-sm text-label-sm text-on-surface-variant flex items-center gap-0.5"
                         >
-                            <span class="material-symbols-outlined text-xs"
-                                >schedule</span
-                            >
-                            Automático
+                            <span class="material-symbols-outlined text-xs">storage</span>
+                            copilot.db
                         </span>
                     </div>
                 </div>
@@ -557,15 +873,11 @@
                     <div
                         class="flex flex-col gap-3 relative before:absolute before:left-3 before:top-3 before:bottom-3 before:w-0.5 before:bg-surface-container-high"
                     >
-                        <div
-                            class="flex items-start gap-space-md relative pl-1"
-                        >
+                        <div class="flex items-start gap-space-md relative pl-1">
                             <span
                                 class="z-10 flex h-5 w-5 rounded-full bg-emerald-500 text-on-error items-center justify-center shadow-sm"
                             >
-                                <span class="material-symbols-outlined text-xs"
-                                    >done</span
-                                >
+                                <span class="material-symbols-outlined text-xs">done</span>
                             </span>
                             <div
                                 class="flex-1 bg-surface-container-low p-space-sm rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-sm"
@@ -579,34 +891,24 @@
                                     <span
                                         class="font-label-sm text-label-sm text-on-surface-variant"
                                     >
-                                        Validación de certificados SSL y tokens
-                                        de sesión activa
+                                        Validación de sesión con C.I. y PIN
                                     </span>
                                 </div>
                                 <div class="flex items-center gap-space-xs">
                                     <span
-                                        class="font-code-num text-code-num bg-surface-container-lowest px-2 py-0.5 rounded text-on-surface font-semibold"
-                                    >
-                                        120ms
-                                    </span>
-                                    <span
                                         class="px-2 py-0.5 rounded font-label-sm text-label-sm bg-emerald-100 text-emerald-800 font-semibold uppercase"
                                     >
-                                        Completado
+                                        Listo
                                     </span>
                                 </div>
                             </div>
                         </div>
 
-                        <div
-                            class="flex items-start gap-space-md relative pl-1"
-                        >
+                        <div class="flex items-start gap-space-md relative pl-1">
                             <span
                                 class="z-10 flex h-5 w-5 rounded-full bg-emerald-500 text-on-error items-center justify-center shadow-sm"
                             >
-                                <span class="material-symbols-outlined text-xs"
-                                    >done</span
-                                >
+                                <span class="material-symbols-outlined text-xs">done</span>
                             </span>
                             <div
                                 class="flex-1 bg-surface-container-low p-space-sm rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-sm"
@@ -615,40 +917,29 @@
                                     <span
                                         class="font-body-md text-body-md font-semibold text-on-surface leading-snug"
                                     >
-                                        Extracción de Legajo Académico y Ficha
-                                        Alumno
+                                        Extracción de Ficha Alumno
                                     </span>
                                     <span
                                         class="font-label-sm text-label-sm text-on-surface-variant"
                                     >
-                                        Parsing de C.I., matrícula oficial y
-                                        plan vigente (Electromecánica)
+                                        Parsing de Cédula y carrera universitaria
                                     </span>
                                 </div>
                                 <div class="flex items-center gap-space-xs">
                                     <span
-                                        class="font-code-num text-code-num bg-surface-container-lowest px-2 py-0.5 rounded text-on-surface font-semibold"
-                                    >
-                                        340ms
-                                    </span>
-                                    <span
                                         class="px-2 py-0.5 rounded font-label-sm text-label-sm bg-emerald-100 text-emerald-800 font-semibold uppercase"
                                     >
-                                        Completado
+                                        Listo
                                     </span>
                                 </div>
                             </div>
                         </div>
 
-                        <div
-                            class="flex items-start gap-space-md relative pl-1"
-                        >
+                        <div class="flex items-start gap-space-md relative pl-1">
                             <span
                                 class="z-10 flex h-5 w-5 rounded-full bg-emerald-500 text-on-error items-center justify-center shadow-sm"
                             >
-                                <span class="material-symbols-outlined text-xs"
-                                    >done</span
-                                >
+                                <span class="material-symbols-outlined text-xs">done</span>
                             </span>
                             <div
                                 class="flex-1 bg-surface-container-low p-space-sm rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-sm"
@@ -658,81 +949,28 @@
                                         class="font-body-md text-body-md font-semibold text-on-surface leading-snug"
                                     >
                                         Scraping de Calificaciones Históricas
-                                        (Actas 2020-2024)
                                     </span>
                                     <span
                                         class="font-label-sm text-label-sm text-on-surface-variant"
                                     >
-                                        Extracción de 62 asignaturas cursadas,
-                                        firmas y ponderaciones
+                                        Actas de exámenes, ponderaciones y estado de aprobación
                                     </span>
                                 </div>
                                 <div class="flex items-center gap-space-xs">
                                     <span
-                                        class="font-code-num text-code-num bg-surface-container-lowest px-2 py-0.5 rounded text-on-surface font-semibold"
-                                    >
-                                        62 materias
-                                    </span>
-                                    <span
                                         class="px-2 py-0.5 rounded font-label-sm text-label-sm bg-emerald-100 text-emerald-800 font-semibold uppercase"
                                     >
-                                        Completado
+                                        Listo
                                     </span>
                                 </div>
                             </div>
                         </div>
 
-                        <div
-                            class="flex items-start gap-space-md relative pl-1"
-                        >
-                            <span
-                                class="z-10 flex h-5 w-5 rounded-full bg-emerald-500 text-on-error items-center justify-center shadow-sm"
-                            >
-                                <span class="material-symbols-outlined text-xs"
-                                    >done</span
-                                >
-                            </span>
-                            <div
-                                class="flex-1 bg-surface-container-low p-space-sm rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-sm"
-                            >
-                                <div class="flex flex-col">
-                                    <span
-                                        class="font-body-md text-body-md font-semibold text-on-surface leading-snug"
-                                    >
-                                        Parseo de Inscripción Actual Semestre
-                                        2024-2
-                                    </span>
-                                    <span
-                                        class="font-label-sm text-label-sm text-on-surface-variant"
-                                    >
-                                        5 cátedras en curso detectadas con
-                                        control de asistencia al 94%
-                                    </span>
-                                </div>
-                                <div class="flex items-center gap-space-xs">
-                                    <span
-                                        class="font-code-num text-code-num bg-surface-container-lowest px-2 py-0.5 rounded text-on-surface font-semibold"
-                                    >
-                                        5 asignaturas
-                                    </span>
-                                    <span
-                                        class="px-2 py-0.5 rounded font-label-sm text-label-sm bg-emerald-100 text-emerald-800 font-semibold uppercase"
-                                    >
-                                        Completado
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div
-                            class="flex items-start gap-space-md relative pl-1"
-                        >
+                        <div class="flex items-start gap-space-md relative pl-1">
                             <span
                                 class="z-10 flex h-5 w-5 rounded-full bg-secondary text-on-primary items-center justify-center shadow-sm"
                             >
-                                <span class="material-symbols-outlined text-xs"
-                                    >psychology</span
-                                >
+                                <span class="material-symbols-outlined text-xs">database</span>
                             </span>
                             <div
                                 class="flex-1 bg-surface-container-low p-space-sm rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-sm"
@@ -741,21 +979,15 @@
                                     <span
                                         class="font-body-md text-body-md font-semibold text-on-surface leading-snug"
                                     >
-                                        Carga en el Motor de Inferencia IA FIUNA
+                                        Persistencia Relacional SQLite
                                     </span>
                                     <span
                                         class="font-label-sm text-label-sm text-on-surface-variant"
                                     >
-                                        Embeddings matriciales calibrados y
-                                        pronósticos listos
+                                        Enlace de tablas por clave foránea <code>cedula</code>
                                     </span>
                                 </div>
                                 <div class="flex items-center gap-space-xs">
-                                    <span
-                                        class="font-code-num text-code-num bg-secondary-fixed text-on-secondary-fixed px-2 py-0.5 rounded font-semibold"
-                                    >
-                                        Modelos Listos
-                                    </span>
                                     <span
                                         class="px-2 py-0.5 rounded font-label-sm text-label-sm bg-secondary text-on-secondary font-semibold uppercase"
                                     >
@@ -774,12 +1006,12 @@
                         <span
                             class="font-label-sm text-label-sm uppercase font-semibold text-on-surface"
                         >
-                            Rendimiento de Parseo de Datos UNA
+                            Seguridad &amp; Privacidad Local
                         </span>
                         <span
-                            class="font-code-num text-code-num text-on-surface font-semibold"
+                            class="font-code-num text-code-num text-emerald-700 font-semibold"
                         >
-                            100 % de integridad
+                            100% Sin Ventana Headful
                         </span>
                     </div>
                     <div
@@ -793,67 +1025,51 @@
                     <div
                         class="flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm mt-0.5"
                     >
-                        <span>67 Registros normalizados</span>
-                        <span>0 Excepciones de red</span>
+                        <span>Cifrado PBKDF2</span>
+                        <span>Ejecución en segundo plano</span>
                     </div>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
                 <div
-                    class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-center gap-space-md"
+                    class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-center gap-space-md border border-outline-variant/30"
                 >
                     <div
                         class="h-12 w-12 rounded-lg bg-surface-container-low flex items-center justify-center text-primary shrink-0"
                     >
-                        <span class="material-symbols-outlined text-2xl"
-                            >dns</span
-                        >
+                        <span class="material-symbols-outlined text-2xl">dns</span>
                     </div>
                     <div class="flex flex-col min-w-0">
-                        <span
-                            class="font-label-sm text-label-sm text-on-surface-variant"
-                        >
+                        <span class="font-label-sm text-label-sm text-on-surface-variant">
                             Servidor Principal
                         </span>
-                        <span
-                            class="font-body-md text-body-md font-semibold text-on-surface truncate"
-                        >
+                        <span class="font-body-md text-body-md font-semibold text-on-surface truncate">
                             insweb.ing.una.py:443
                         </span>
-                        <span
-                            class="font-code-num text-code-num text-emerald-700"
-                        >
-                            Online / Sin demoras
+                        <span class="font-code-num text-code-num text-emerald-700">
+                            Online / Silencioso
                         </span>
                     </div>
                 </div>
 
                 <div
-                    class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-center gap-space-md"
+                    class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-center gap-space-md border border-outline-variant/30"
                 >
                     <div
                         class="h-12 w-12 rounded-lg bg-surface-container-low flex items-center justify-center text-primary shrink-0"
                     >
-                        <span class="material-symbols-outlined text-2xl"
-                            >security_update_good</span
-                        >
+                        <span class="material-symbols-outlined text-2xl">security_update_good</span>
                     </div>
                     <div class="flex flex-col min-w-0">
-                        <span
-                            class="font-label-sm text-label-sm text-on-surface-variant"
-                        >
-                            Integración API
+                        <span class="font-label-sm text-label-sm text-on-surface-variant">
+                            API Backend
                         </span>
-                        <span
-                            class="font-body-md text-body-md font-semibold text-on-surface truncate"
-                        >
-                            FIUNA-Sync v2.4
+                        <span class="font-body-md text-body-md font-semibold text-on-surface truncate">
+                            FastAPI /api/auth
                         </span>
-                        <span
-                            class="font-code-num text-code-num text-secondary"
-                        >
-                            Cripto-Worker Listo
+                        <span class="font-code-num text-code-num text-secondary">
+                            SQLite Vinculado
                         </span>
                     </div>
                 </div>
@@ -861,9 +1077,9 @@
         </div>
     </div>
 
-    <!-- Bottom Action Box -->
+    <!-- Barra Inferior de Acción -->
     <div
-        class="mt-space-xl p-space-lg bg-surface-container-low rounded-xl flex flex-col md:flex-row items-center justify-between gap-space-md"
+        class="mt-space-xl p-space-lg bg-surface-container-low rounded-xl flex flex-col md:flex-row items-center justify-between gap-space-md border border-outline-variant/30"
     >
         <div class="flex items-center gap-space-md">
             <div
@@ -872,25 +1088,25 @@
                 <span class="material-symbols-outlined">auto_graph</span>
             </div>
             <div class="flex flex-col">
-                <span
-                    class="font-label-md text-label-md font-bold text-on-surface"
-                >
-                    Próximo paso tras la validación de InsWeb
+                <span class="font-label-md text-label-md font-bold text-on-surface">
+                    Dashboard Académico &amp; Simulador Predictivo FIUNA
                 </span>
                 <span class="font-body-sm text-body-sm text-on-surface-variant">
-                    El simulador proyectará de inmediato tus probabilidades de
-                    firma para el 2.º Ciclo 2024.
+                    Explora tus probabilidades de firma de actas, cálculo de ponderaciones y asistencia.
                 </span>
             </div>
         </div>
         <div class="flex items-center gap-space-sm w-full md:w-auto">
-            <a
-                href="/dashboard"
+            <button
+                type="button"
                 class="w-full md:w-auto px-space-lg py-2.5 bg-primary text-on-primary rounded font-label-md text-label-md uppercase tracking-wider font-semibold text-center hover:bg-primary-container transition-all shadow-sm inline-block"
-                onclick={() =>
-                    (academicState.activeNav = "dashboard-academico")}
-                >Acceder al Dashboard Principal</a
+                onclick={() => {
+                    academicState.activeNav = "dashboard";
+                    goto("/dashboard");
+                }}
             >
+                Acceder al Dashboard
+            </button>
         </div>
     </div>
 </div>

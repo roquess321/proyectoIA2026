@@ -4,6 +4,7 @@
 	import type { GeminiChatMessage } from '../../services/types';
 	import { chat as geminiChat } from '../../services/gemini';
 	import { initialChatMessages } from '../../data/simulator-mock';
+	import { authState } from '../../auth-state.svelte';
 
 	export interface Props {
 		subject: SubjectSimulation;
@@ -48,12 +49,12 @@
 		const text = inputText.trim();
 		if (!text || isTyping) return;
 
-		// 1. Añadir mensaje del usuario a la UI
+		const userDisplayName = authState.user?.nombre || 'Estudiante';
 		const userMsg: ChatMessage = {
 			id: `user-${Date.now()}`,
 			sender: 'user',
 			text,
-			timestamp: `Ahora • Alejandro Benítez`
+			timestamp: `Ahora • ${userDisplayName}`
 		};
 
 		messages = [...messages, userMsg];
@@ -77,7 +78,7 @@
 		isTyping = true;
 
 		try {
-			const result = await geminiChat(userContent, currentSessionId);
+			const result = await geminiChat(userContent, currentSessionId, authState.user?.cedula);
 			currentSessionId = result.sessionId;
 			const responseText = result.reply;
 
@@ -170,12 +171,12 @@
 	<!-- Chat Stream Container -->
 	<div
 		bind:this={chatContainer}
-		class="p-space-md flex flex-col gap-space-md overflow-y-auto max-h-[580px] min-h-[420px] bg-background"
+		class="p-3 sm:p-space-md flex flex-col gap-space-md overflow-y-auto h-[380px] sm:h-[460px] xl:h-[520px] bg-background"
 	>
 		<!-- Timestamp divider -->
 		<div class="flex items-center justify-center my-1">
 			<span
-				class="font-label-sm text-label-sm text-outline bg-surface-container-high px-3 py-0.5 rounded-full font-code-num"
+				class="font-label-sm text-label-sm text-outline bg-surface-container-high px-3 py-0.5 rounded-full font-code-num text-xs"
 			>
 				Hoy • Chat con Gemini AI
 			</span>
@@ -252,11 +253,12 @@
 						</div>
 						<span class="font-code-num text-[11px] text-outline pr-1">{msg.timestamp}</span>
 					</div>
-					<img
-						alt="Alejandro Benítez"
-						class="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5 ring-1 ring-surface-container-high"
-						src="https://lh3.googleusercontent.com/aida-public/AB6AXuB8kJ8FISwkV6OknOgU0T7j3qRhwrIH2U1kypIEEFDa--01sG9zkVj7oWJ_5WG452Ig4i94JueK2YPEYHgLASnwTCcUJYc7MSbtBjI4ymazMa1wiMt_seGP6F1dWEs56_3IcHZ0-sF40L3lkzpQwgLkNB6MqFJ79KcVHgdN040oqJg0pbttWoL0sRVJ6qfIbtqpuA0_iIVKCGY1bX5GffM55HRS_PnCZWF9VvY8Adwi10slrChZ_3cA"
-					/>
+					<div
+						class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-xs shrink-0 mt-0.5 ring-1 ring-surface-container-high"
+						title={authState.user?.nombre || 'Estudiante'}
+					>
+						{authState.user?.nombre ? authState.user.nombre.slice(0, 2).toUpperCase() : 'ES'}
+					</div>
 				</div>
 			{/if}
 		{/each}
@@ -297,12 +299,12 @@
 		{/if}
 	</div>
 
-	<!-- Quick Action Prompt Chips -->
-	<div class="px-space-md py-space-sm bg-surface-container-low flex flex-wrap gap-1.5">
+	<!-- Quick Action Prompt Chips (Scroll Horizontal Ergonómico en Móvil) -->
+	<div class="px-3 sm:px-space-md py-2 bg-surface-container-low flex items-center gap-1.5 overflow-x-auto scroll-smooth whitespace-nowrap">
 		{#each quickPrompts as promptText}
 			<button
 				type="button"
-				class="px-3 py-1.5 bg-surface-container-lowest hover:bg-surface-container text-primary font-label-sm text-label-sm font-medium rounded-full shadow-2xs transition-all text-left flex items-center gap-1.5 cursor-pointer border border-outline-variant/20 disabled:opacity-50 disabled:cursor-not-allowed"
+				class="px-2.5 sm:px-3 py-1 bg-surface-container-lowest hover:bg-surface-container text-primary font-label-sm text-xs sm:text-label-sm font-medium rounded-full shadow-2xs transition-all text-left flex items-center gap-1.5 cursor-pointer border border-outline-variant/20 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
 				onclick={() => handleQuickPrompt(promptText)}
 				disabled={isTyping}
 			>
@@ -319,7 +321,7 @@
 	</div>
 
 	<!-- Interactive Input Area -->
-	<div class="p-space-md bg-surface-container-lowest flex flex-col gap-space-xs">
+	<div class="p-3 sm:p-space-md bg-surface-container-lowest flex flex-col gap-space-xs">
 		<form
 			class="flex items-center gap-space-xs relative"
 			onsubmit={(e) => {
@@ -329,15 +331,15 @@
 		>
 			<input
 				type="text"
-				class="w-full bg-surface-container-low text-on-surface font-body-md text-body-md py-2.5 pl-3.5 pr-24 rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary placeholder:text-outline shadow-sm border border-outline-variant/30"
-				placeholder="Haz una consulta académica al Copiloto IA..."
+				class="w-full bg-surface-container-low text-on-surface font-body-md text-sm sm:text-body-md py-2 sm:py-2.5 pl-3 sm:pl-3.5 pr-20 sm:pr-24 rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary placeholder:text-outline shadow-sm border border-outline-variant/30"
+				placeholder="Consulta académica al Copiloto IA..."
 				bind:value={inputText}
 				disabled={isTyping}
 			/>
-			<div class="absolute right-1.5 flex items-center gap-1">
+			<div class="absolute right-1 sm:right-1.5 flex items-center gap-1">
 				<button
 					type="submit"
-					class="p-2 bg-primary text-on-primary hover:bg-primary-container rounded transition-colors flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+					class="p-1.5 sm:p-2 bg-primary text-on-primary hover:bg-primary-container rounded transition-colors flex items-center justify-center shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
 					title="Enviar mensaje"
 					disabled={isTyping || !inputText.trim()}
 				>
@@ -347,10 +349,10 @@
 		</form>
 
 		<div class="flex items-center justify-between px-1">
-			<span class="font-label-sm text-[10px] text-outline">
-				Impulsado por Gemini — Solo texto. Las respuestas son orientativas.
+			<span class="font-label-sm text-[10px] text-outline truncate max-w-[220px] sm:max-w-none">
+				Impulsado por Gemini 3.5 Flash-Lite & ML
 			</span>
-			<span class="font-code-num text-[10px] text-secondary font-semibold flex items-center gap-0.5">
+			<span class="font-code-num text-[10px] text-secondary font-semibold flex items-center gap-0.5 shrink-0">
 				<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
 				Online
 			</span>

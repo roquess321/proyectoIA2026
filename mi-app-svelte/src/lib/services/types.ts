@@ -52,9 +52,37 @@ export interface FastApiSessionSummary {
 }
 
 /**
- * Placeholder para futuras predicciones ML.
- * Cuando se integren modelos de predicción, se extenderá esta interfaz.
+ * Modelos y tipos para predicciones de Machine Learning (1er y 2do Parcial)
  */
+export interface MLModelProbability {
+	nombre: string;
+	probabilidad: number;
+	prediccion: 'Aprueba' | 'No Aprueba';
+	descripcion: string;
+}
+
+export interface MLPredictResponse {
+	materia: string;
+	materia_modelo: string;
+	parcial_origen: string;
+	inputs: {
+		primer_parcial: number;
+		segundo_parcial: number;
+		tplab: number;
+	};
+	probabilidades: {
+		regresion_logistica: MLModelProbability;
+		arbol_decision: MLModelProbability;
+		random_forest: MLModelProbability;
+		[key: string]: MLModelProbability;
+	};
+	resumen: {
+		probabilidad_promedio: number;
+		diagnostico: string;
+		recomendacion: string;
+	};
+}
+
 export interface PredictionInput {
 	subjectId: string;
 	p1: number;
@@ -68,3 +96,4 @@ export interface PredictionResult {
 	requiredFinalScore: number;
 	recommendation: string;
 }
+

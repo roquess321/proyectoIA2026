@@ -43,7 +43,7 @@
 </script>
 
 <div
-	class="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col md:flex-row gap-space-lg items-center relative overflow-hidden"
+	class="bg-surface-container-lowest p-4 sm:p-space-lg rounded-xl shadow-sm flex flex-col md:flex-row gap-space-md sm:gap-space-lg items-center relative overflow-hidden"
 >
 	<div
 		class="absolute -right-16 -top-16 w-48 h-48 rounded-full bg-secondary-fixed/20 blur-2xl pointer-events-none"
@@ -124,7 +124,7 @@
 				></div>
 			</div>
 
-			<div class="flex justify-between items-center text-outline text-[11px] font-code-num">
+			<div class="flex flex-col sm:flex-row sm:justify-between sm:items-center text-outline text-[11px] font-code-num gap-0.5">
 				<span>Umbral Habilitación: 30.0 pts (60%)</span>
 				{#if deltaHabilitacion >= 0}
 					<span class="text-secondary font-semibold">

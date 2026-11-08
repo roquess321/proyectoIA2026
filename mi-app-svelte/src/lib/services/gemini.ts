@@ -2,7 +2,8 @@ import type {
 	GeminiChatMessage,
 	FastApiChatResponse,
 	FastApiHistoryResponse,
-	FastApiSessionSummary
+	FastApiSessionSummary,
+	MLPredictResponse
 } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -17,7 +18,8 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
  */
 export async function chat(
 	messageInput: GeminiChatMessage[] | string,
-	sessionId?: string | null
+	sessionId?: string | null,
+	cedula?: string | null
 ): Promise<{ reply: string; sessionId: string }> {
 	let messageText = '';
 
@@ -40,7 +42,8 @@ export async function chat(
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				message: messageText,
-				session_id: sessionId || undefined
+				session_id: sessionId || undefined,
+				cedula: cedula || undefined
 			})
 		});
 	} catch (networkError) {
@@ -88,3 +91,49 @@ export async function listChatSessions(): Promise<FastApiSessionSummary[]> {
 	}
 	return response.json();
 }
+
+/**
+ * Consulta la predicción de Machine Learning directamente al backend.
+ * Evalúa los 3 modelos del primer parcial: Regresión Logística, Árbol de Decisión y Random Forest.
+ */
+export async function getMLPrediction(
+	materia: string,
+	primerParcial: number,
+	segundoParcial: number,
+	tplab: number
+): Promise<MLPredictResponse> {
+	const response = await fetch(`${API_BASE}/api/ml/predict`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			materia,
+			primer_parcial: primerParcial,
+			segundo_parcial: segundoParcial,
+			tplab
+		})
+	});
+
+	if (!response.ok) {
+		const err = await response.text();
+		throw new Error(`Error en predicción ML (${response.status}): ${err}`);
+	}
+
+	return response.json();
+}
+
+/**
+ * Obtiene la lista de modelos de Machine Learning cargados y disponibles en el servidor.
+ */
+export async function getAvailableMLModels(): Promise<{
+	primer_parcial: Array<Record<string, unknown>>;
+	segundo_parcial: Array<Record<string, unknown>>;
+	modelos_activos: string[];
+	variables_requeridas: string[];
+}> {
+	const response = await fetch(`${API_BASE}/api/ml/models`);
+	if (!response.ok) {
+		throw new Error('No se pudo obtener el catálogo de modelos ML.');
+	}
+	return response.json();
+}
+

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { academicState } from '../academic-state.svelte';
+	import { authState } from '../auth-state.svelte';
 
 	let dark = $state(false);
 
@@ -30,29 +31,58 @@
 </script>
 
 <header
-	class="fixed top-0 left-72 right-0 h-16 bg-surface/90 border-b border-outline-variant/30 dark:border-surface-container-high/60 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] dark:shadow-none z-40 flex items-center justify-between px-space-lg transition-colors"
+	class="fixed top-0 left-0 lg:left-72 right-0 h-16 bg-surface/90 border-b border-outline-variant/30 dark:border-surface-container-high/60 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)] dark:shadow-none z-40 flex items-center justify-between px-3 sm:px-space-md lg:px-space-lg transition-all"
 >
-	<div class="flex items-center gap-space-md">
-		<div class="flex items-center gap-space-xs bg-surface-container-high px-space-sm py-1 rounded">
+	<div class="flex items-center gap-1 sm:gap-space-md">
+		<!-- Botón Hamburguesa para Móvil -->
+		<button
+			type="button"
+			class="lg:hidden p-2 rounded-lg text-on-surface hover:bg-surface-container active:bg-surface-container-high transition-colors cursor-pointer mr-0.5"
+			onclick={() => academicState.toggleMobileMenu()}
+			aria-label="Abrir menú de navegación"
+		>
+			<span class="material-symbols-outlined text-2xl">menu</span>
+		</button>
+
+		<!-- Logo / Marca visible solo en móvil -->
+		<div class="lg:hidden flex items-center gap-1.5 mr-1">
+			<span class="font-headline-sm text-base font-bold text-primary dark:text-white leading-none">FIUNA</span>
+			<span class="text-[10px] uppercase font-bold text-secondary px-1.5 py-0.5 rounded bg-secondary-fixed/60 dark:bg-secondary-container/40">AI</span>
+		</div>
+
+		<!-- Periodo Lectivo (Visible en pantallas medianas y grandes) -->
+		<div class="hidden md:flex items-center gap-space-xs bg-surface-container-high px-space-sm py-1 rounded">
 			<span class="material-symbols-outlined text-primary text-base">calendar_month</span>
 			<span class="font-label-sm text-label-sm font-semibold text-on-surface">
-				Periodo Lectivo 2024-2 (Segundo Ciclo)
+				Periodo 2024-2 (Segundo Ciclo)
 			</span>
 		</div>
-		<div
-			class="flex items-center gap-space-xs bg-surface-container-lowest px-space-sm py-1 rounded shadow-sm"
-		>
-			<span class="h-2 w-2 rounded-full bg-emerald-500"></span>
-			<span class="font-label-sm text-label-sm font-medium text-on-surface-variant">
-				InsWeb Conectado
-			</span>
-			<span class="font-label-sm text-label-sm text-outline">(Último sync: hoy 09:42)</span>
-		</div>
+
+		{#if authState.isLoggedIn && authState.user}
+			<div
+				class="flex items-center gap-1.5 bg-surface-container-lowest px-2 sm:px-space-sm py-1 rounded shadow-xs"
+			>
+				<span class="h-2 w-2 rounded-full {authState.user.isSynced ? 'bg-emerald-500' : 'bg-amber-500'} shrink-0"></span>
+				<span class="font-label-sm text-label-sm font-medium text-on-surface-variant truncate max-w-[120px] sm:max-w-none">
+					{authState.user.isSynced ? 'InsWeb' : 'Local'}
+				</span>
+				<span class="hidden sm:inline font-label-sm text-label-sm text-outline">(C.I. {authState.user.cedula})</span>
+			</div>
+		{:else}
+			<div
+				class="hidden sm:flex items-center gap-space-xs bg-surface-container-lowest px-space-sm py-1 rounded shadow-xs opacity-80"
+			>
+				<span class="h-2 w-2 rounded-full bg-slate-400"></span>
+				<span class="font-label-sm text-label-sm font-medium text-outline">
+					Modo Invitado
+				</span>
+			</div>
+		{/if}
 	</div>
 
-	<div class="flex items-center gap-space-md">
+	<div class="flex items-center gap-1 sm:gap-space-md">
 		<button
-			class="p-space-xs rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface relative transition-colors"
+			class="hidden xs:flex p-space-xs rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface relative transition-colors cursor-pointer"
 			title="Notificaciones"
 			type="button"
 		>
@@ -61,7 +91,7 @@
 		</button>
 
 		<button
-			class="p-space-xs rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+			class="p-space-xs rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer"
 			title="Sincronización Rápida"
 			type="button"
 			onclick={() => academicState.forceRescrape()}
@@ -75,7 +105,7 @@
 
 		<!-- Botón de tema oscuro/claro -->
 		<button
-			class="p-space-xs rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
+			class="p-space-xs rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer"
 			title={dark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'}
 			type="button"
 			onclick={toggleTheme}
@@ -85,20 +115,43 @@
 			</span>
 		</button>
 
-		<div class="h-6 w-px bg-surface-container-high"></div>
+		<div class="h-6 w-px bg-surface-container-high hidden sm:block"></div>
 
-		<div class="flex items-center gap-space-sm pl-space-xs">
-			<div class="flex flex-col text-right">
-				<span class="font-label-md text-label-md font-semibold text-on-surface leading-tight">
-					Alejandro Benítez
-				</span>
-				<span class="font-label-sm text-label-sm text-on-surface-variant">Ing. Electromecánica</span>
+		{#if authState.isLoggedIn && authState.user}
+			<div class="flex items-center gap-1 sm:gap-space-sm pl-0.5 sm:pl-space-xs">
+				<div class="hidden sm:flex flex-col text-right">
+					<span class="font-label-md text-label-md font-semibold text-on-surface leading-tight truncate max-w-[150px]">
+						{authState.user.nombre}
+					</span>
+					<span class="font-label-sm text-label-sm text-on-surface-variant truncate max-w-[150px]">
+						{authState.user.carrera}
+					</span>
+				</div>
+				<div
+					class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-xs ring-2 ring-surface-container-high shrink-0"
+					title="C.I. {authState.user.cedula} • {authState.user.nombre}"
+				>
+					{authState.user.nombre.slice(0, 2).toUpperCase()}
+				</div>
+				<button
+					type="button"
+					class="p-space-xs rounded text-outline hover:text-error hover:bg-error/10 transition-colors cursor-pointer"
+					title="Cerrar Sesión"
+					onclick={() => authState.logout()}
+				>
+					<span class="material-symbols-outlined text-lg">logout</span>
+				</button>
 			</div>
-			<img
-				alt="Foto de perfil de Alejandro Benítez"
-				class="w-8 h-8 rounded-full object-cover ring-2 ring-surface-container-high"
-				src="https://lh3.googleusercontent.com/aida-public/AB6AXuB8kJ8FISwkV6OknOgU0T7j3qRhwrIH2U1kypIEEFDa--01sG9zkVj7oWJ_5WG452Ig4i94JueK2YPEYHgLASnwTCcUJYc7MSbtBjI4ymazMa1wiMt_seGP6F1dWEs56_3IcHZ0-sF40L3lkzpQwgLkNB6MqFJ79KcVHgdN040oqJg0pbttWoL0sRVJ6qfIbtqpuA0_iIVKCGY1bX5GffM55HRS_PnCZWF9VvY8Adwi10slrChZ_3cA"
-			/>
-		</div>
+		{:else}
+			<div class="flex items-center gap-1 sm:gap-space-sm pl-0.5 sm:pl-space-xs">
+				<a
+					href="/"
+					class="px-2.5 sm:px-space-sm py-1 rounded bg-primary text-on-primary font-label-sm text-label-sm hover:bg-primary-container transition-colors shadow-sm whitespace-nowrap"
+					onclick={() => (academicState.activeNav = 'acceso-insweb')}
+				>
+					Acceder
+				</a>
+			</div>
+		{/if}
 	</div>
 </header>

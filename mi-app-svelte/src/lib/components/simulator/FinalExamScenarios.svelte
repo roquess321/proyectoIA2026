@@ -32,7 +32,7 @@
 	);
 </script>
 
-<div class="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col gap-space-md">
+<div class="bg-surface-container-lowest p-4 sm:p-space-lg rounded-xl shadow-sm flex flex-col gap-space-md">
 	<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
 		<div class="flex flex-col">
 			<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold">

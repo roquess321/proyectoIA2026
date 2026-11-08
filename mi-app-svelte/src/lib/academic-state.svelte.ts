@@ -49,6 +49,15 @@ export class AcademicState {
   latency = $state(48);
   pipelineStatus = $state("5 de 5 Fases Completadas");
   activeNav = $state("acceso-insweb");
+  isMobileMenuOpen = $state(false);
+
+  toggleMobileMenu(): void {
+    this.isMobileMenuOpen = !this.isMobileMenuOpen;
+  }
+
+  closeMobileMenu(): void {
+    this.isMobileMenuOpen = false;
+  }
 
   forceRescrape(): void {
     if (this.isRescraping) return;

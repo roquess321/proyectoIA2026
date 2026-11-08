@@ -15,14 +15,14 @@
 	<!-- Barra lateral institucional -->
 	<Sidebar />
 
-	<!-- Contenedor principal con offset para el sidebar -->
-	<div class="pl-72">
+	<!-- Contenedor principal con offset para el sidebar en pantallas grandes -->
+	<div class="pl-0 lg:pl-72 transition-[padding] duration-300">
 		<!-- Barra superior con usuario y estado -->
 		<Header />
 
-		<!-- Renderizado de la ruta actual -->
+		<!-- Renderizado de la ruta actual con espacio superior suficiente para que el header fijo nunca se superponga -->
 		<main
-			class="w-full pt-16 bg-background px-space-lg py-space-lg min-h-screen"
+			class="w-full pt-20 sm:pt-20 lg:pt-24 pb-10 sm:pb-16 bg-background px-3 sm:px-space-md lg:px-space-lg min-h-screen"
 		>
 			{@render children()}
 		</main>

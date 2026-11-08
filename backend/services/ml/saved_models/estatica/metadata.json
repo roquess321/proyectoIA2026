@@ -1,0 +1,35 @@
+{
+  "materia": "ESTATICA",
+  "materia_slug": "estatica",
+  "parcial_origen": "primer_parcial",
+  "total_muestras": 1798,
+  "tasa_aprobacion_real": 0.2903,
+  "variables": [
+    "Primer.Par",
+    "Segundo.Par",
+    "TPLab."
+  ],
+  "metricas": {
+    "regresion_logistica": {
+      "accuracy": 0.8222,
+      "auc_roc": 0.9319,
+      "precision": 0.6298,
+      "recall": 0.9427,
+      "f1": 0.7551
+    },
+    "arbol_decision": {
+      "accuracy": 0.8574,
+      "auc_roc": 0.9399,
+      "precision": 0.7041,
+      "recall": 0.879,
+      "f1": 0.7819
+    },
+    "random_forest": {
+      "accuracy": 0.8685,
+      "auc_roc": 0.9523,
+      "precision": 0.7087,
+      "recall": 0.9299,
+      "f1": 0.8044
+    }
+  }
+}

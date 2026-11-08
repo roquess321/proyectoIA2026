@@ -96,6 +96,7 @@ export const initialChatMessages: ChatMessage[] = [
 ];
 
 export const quickPrompts: string[] = [
+  "Predecir si apruebo la materia con los 3 modelos de IA",
   "Generar plan de estudio para este fin de semana",
   "Ver ejercicios de exámenes anteriores",
   "Simular para Resistencia de Materiales II",
