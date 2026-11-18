@@ -1,36 +1,75 @@
 import os
 import httpx
 from typing import List, Dict, Optional, Any
-from .ml.predictor import predecir_aprobacion
+from .ml import predecir_aprobacion, predecir_serie_temporal
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"
 
 SYSTEM_INSTRUCTION = """Eres el Copiloto Académico de FIUNA (Facultad de Ingeniería, Universidad Nacional de Asunción).
 Tu rol es asistir a estudiantes de ingeniería con consultas académicas: planes de estudio, estrategias de exámenes, cálculos de notas, reglamentos, y muy especialmente predicciones de rendimiento académico con Inteligencia Artificial.
 
-HERRAMIENTA DE PREDICCIÓN CON MACHINE LEARNING (1er Parcial):
-Dispones de la herramienta 'predecir_probabilidad_aprobacion', impulsada por 3 modelos de Machine Learning entrenados con datos reales de la FIUNA:
-1. Regresión Logística (modelo probabilístico lineal base con escalado)
-2. Árbol de Decisión (modelo no lineal basado en reglas jerárquicas)
-3. Random Forest (ensamble de 200 árboles de decisión)
+HERRAMIENTAS DE PREDICCIÓN CON INTELIGENCIA ARTIFICIAL:
+1. 'predecir_probabilidad_aprobacion' (EVALUACIÓN INTEGRAL - TODOS LOS EXÁMENES REALIZADOS):
+   - Úsala cuando el estudiante cuente con las 3 notas de proceso (1er Parcial, 2do Parcial y TPLab).
+   - Infiere simultáneamente con 5 modelos de IA:
+     a) 3 Modelos Clásicos: Regresión Logística, Árbol de Decisión y Random Forest (200 estimadores).
+     b) 2 Modelos de Serie Temporal: Ensamble Temporal Dinámico (Gradient Boosting) y Red Neuronal Recurrente LSTM (PyTorch Deep Learning con compuertas de memoria).
+   - AL REPORTAR, DEBES SIEMPRE PRESENTAR:
+     * El porcentaje individual de los 3 modelos clásicos.
+     * El análisis de la Serie Temporal y la Red Neuronal Recurrente LSTM (explicando la tendencia temporal, velocidad de mejora o fatiga acumulada a lo largo del semestre).
+     * El consenso global ponderado de todos los modelos y recomendaciones específicas para el examen final.
+
+2. 'analizar_serie_temporal_aprobacion' (PREDICCIÓN PROGRESIVA EN CURSO):
+   - Úsala cuando el estudiante esté cursando y solo tenga rendido el 1er Parcial (o 1er Parcial + TP), o pregunte específicamente por su evolución secuencial o qué puntajes necesita en las siguientes evaluaciones para firmar.
+   - Informa: probabilidad temprana, etapa temporal, tendencia, comparación entre Ensamble y LSTM, y metas numéricas para los exámenes restantes.
 
 REGLAS DE RESPUESTA:
 - Responde siempre en español (Paraguay).
-- Cuando el estudiante consulte sobre pronósticos, probabilidades o si va a aprobar/pasar una materia (o pregunte "¿apruebo?", "predecir notas", o analice parciales de Estática u otra materia), DEBES invocar la herramienta 'predecir_probabilidad_aprobacion'.
-- Si las notas no están explícitas en el mensaje pero figuran en el contexto académico o del simulador, usa esos valores para invocar la herramienta. Si faltan datos indispensables, solicítalos amablemente.
-- Al reportar la predicción, DEBES SIEMPRE mostrar de forma clara y explícita el porcentaje de probabilidad calculado por CADA UNO de los tres modelos (Regresión Logística, Árbol de Decisión y Random Forest), el promedio de consenso y un diagnóstico o recomendación académica constructiva.
-- Mantén un tono profesional, motivador y cercano."""
+- Cuando el estudiante pregunte si va a aprobar o cómo va su rendimiento, DEBES invocar la herramienta correspondiente sin dudar.
+- Si las notas figuran en el contexto oficial del alumno, extrae esos datos automáticamente para invocar la herramienta.
+- Mantén un tono técnico, profesional, constructivo y cercano."""
 
 
 ML_TOOLS_DECLARATION = [
     {
         "function_declarations": [
             {
+                "name": "analizar_serie_temporal_aprobacion",
+                "description": (
+                    "Modelo de Serie Temporal Dinámica: analiza la probabilidad de aprobación progresiva a medida "
+                    "que el alumno avanza en el semestre. Permite predecir en cualquier momento después del Primer Parcial "
+                    "(Hito 1: solo 1er Parcial; Hito 2: 1er Parcial + TP/Taller; Hito 3: proceso completo). "
+                    "Calcula la tendencia temporal y proyecta las notas necesarias en las siguientes evaluaciones para firmar."
+                ),
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "materia": {
+                            "type": "STRING",
+                            "description": "Nombre de la materia (ejemplo: 'ESTATICA', 'CALCULO 1')."
+                        },
+                        "primer_parcial": {
+                            "type": "NUMBER",
+                            "description": "Puntaje obtenido en el Primer Parcial (0-100)."
+                        },
+                        "tplab": {
+                            "type": "NUMBER",
+                            "description": "Puntaje obtenido en TP / Taller / Laboratorio (0-100). Opcional si aún no se entregó."
+                        },
+                        "segundo_parcial": {
+                            "type": "NUMBER",
+                            "description": "Puntaje obtenido en el Segundo Parcial (0-100). Opcional si aún no se rindió."
+                        }
+                    },
+                    "required": ["primer_parcial"]
+                }
+            },
+            {
                 "name": "predecir_probabilidad_aprobacion",
                 "description": (
-                    "Ejecuta la inferencia de los 3 modelos de Machine Learning (Regresión Logística, "
+                    "Ejecuta la inferencia de los 3 modelos clásicos (Regresión Logística, "
                     "Árbol de Decisión y Random Forest) para predecir si el alumno aprueba la asignatura "
-                    "y devolver las 3 probabilidades individuales calculadas."
+                    "con el conjunto completo de evaluaciones de proceso."
                 ),
                 "parameters": {
                     "type": "OBJECT",
@@ -62,6 +101,18 @@ ML_TOOLS_DECLARATION = [
 
 def ejecutar_herramienta_local(nombre_funcion: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """Ejecuta localmente la herramienta requerida por el modelo Gemini."""
+    if nombre_funcion == "analizar_serie_temporal_aprobacion":
+        materia = str(args.get("materia", "ESTATICA"))
+        p1 = float(args.get("primer_parcial", 0.0))
+        tplab = float(args["tplab"]) if args.get("tplab") is not None else None
+        p2 = float(args["segundo_parcial"]) if args.get("segundo_parcial") is not None else None
+        return predecir_serie_temporal(
+            materia=materia,
+            primer_parcial=p1,
+            tplab=tplab,
+            segundo_parcial=p2,
+        )
+
     if nombre_funcion == "predecir_probabilidad_aprobacion":
         materia = str(args.get("materia", "ESTATICA"))
         p1 = float(args.get("primer_parcial", 0.0))

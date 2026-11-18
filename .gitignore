@@ -49,4 +49,6 @@ vite.config.ts.timestamp-*
 data/
 referencia_scraper_ignorar_github/
 ejemplos_modelos_ingorar_github/
+defensa_ignorar_github/
+
 

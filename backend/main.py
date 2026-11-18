@@ -1,83 +1,64 @@
 import os
+import sys
 import uuid
 from contextlib import asynccontextmanager
-from typing import List
+from pathlib import Path
+from typing import List, Dict
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
+# Asegurar que tanto 'backend' como la raíz del proyecto estén en sys.path
+_current_file = Path(__file__).resolve()
+_backend_dir = _current_file.parent
+_project_root = _backend_dir.parent
+
+for _p in [str(_backend_dir), str(_project_root)]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 # Cargar variables de entorno desde backend/.env o ruta actual
-_backend_dir = os.path.dirname(os.path.abspath(__file__))
-_env_file = os.path.join(_backend_dir, ".env")
-if os.path.exists(_env_file):
+_env_file = _backend_dir / ".env"
+if _env_file.exists():
     load_dotenv(dotenv_path=_env_file)
 else:
     load_dotenv()
 
-try:
-    from .database import engine, Base, get_db
-    from .models import ChatSession, ChatMessage, Estudiante, Inscripcion, Parcial, NotaFinal, UsuarioLocal
-    from .schemas import (
-        ChatRequest,
-        ChatResponse,
-        HistoryResponse,
-        MessageItem,
-        SessionSummary,
-        ScraperSyncRequest,
-        ScraperSyncResponse,
-        EstudianteSummaryResponse,
-        InscripcionItem,
-        ParcialItem,
-        NotaFinalItem,
-        LoginRequest,
-        LoginResponse,
-        UserRegisterRequest,
-        UserLoginRequest,
-        UserResponse,
-        LinkInswebRequest,
-        MLPredictRequest,
-        MLPredictResponse,
-    )
-    from .services.llm import call_gemini
-    from .services.scraper import ejecutar_pipeline_estudiante
-    from .services.security import hash_password, verify_password
-    from .services.ml import predecir_aprobacion, obtener_modelos_disponibles
-except ImportError:
-    from database import engine, Base, get_db
-    from models import ChatSession, ChatMessage, Estudiante, Inscripcion, Parcial, NotaFinal, UsuarioLocal
-    from schemas import (
-        ChatRequest,
-        ChatResponse,
-        HistoryResponse,
-        MessageItem,
-        SessionSummary,
-        ScraperSyncRequest,
-        ScraperSyncResponse,
-        EstudianteSummaryResponse,
-        InscripcionItem,
-        ParcialItem,
-        NotaFinalItem,
-        LoginRequest,
-        LoginResponse,
-        UserRegisterRequest,
-        UserLoginRequest,
-        UserResponse,
-        LinkInswebRequest,
-        MLPredictRequest,
-        MLPredictResponse,
-    )
-    from services.llm import call_gemini
-    from services.scraper import ejecutar_pipeline_estudiante
-    from services.security import hash_password, verify_password
-    from services.ml import predecir_aprobacion, obtener_modelos_disponibles
+from backend.database import engine, Base, get_db
+from backend.models import ChatSession, ChatMessage, Estudiante, Inscripcion, Parcial, NotaFinal, UsuarioLocal
+from backend.schemas import (
+    ChatRequest,
+    ChatResponse,
+    HistoryResponse,
+    MessageItem,
+    SessionSummary,
+    ScraperSyncRequest,
+    ScraperSyncResponse,
+    EstudianteSummaryResponse,
+    InscripcionItem,
+    ParcialItem,
+    NotaFinalItem,
+    LoginRequest,
+    LoginResponse,
+    UserRegisterRequest,
+    UserLoginRequest,
+    UserResponse,
+    LinkInswebRequest,
+    MLPredictRequest,
+    MLPredictResponse,
+    MLSequentialPredictRequest,
+    MLSequentialPredictResponse,
+)
+from backend.services.llm import call_gemini
+from backend.services.scraper import ejecutar_pipeline_estudiante
+from backend.services.security import hash_password, verify_password
+from backend.services.ml import predecir_aprobacion, predecir_serie_temporal, obtener_modelos_disponibles
 
-
-# Crear tablas en SQLite si no existen aún
-Base.metadata.create_all(bind=engine)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Crear tablas en SQLite si no existen aún al arrancar la app
     Base.metadata.create_all(bind=engine)
     yield
 
@@ -127,12 +108,16 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     """
     session_id = request.session_id
 
+    # Limpiar título para que no contenga saltos de línea y tenga longitud adecuada
+    clean_title = request.message.strip().splitlines()[0] if request.message.strip() else "Nueva consulta académica"
+    title_str = (clean_title[:45] + "...") if len(clean_title) > 45 else clean_title
+
     # Si no se envió sesión o viene vacía, generar nuevo UUID
     if not session_id:
         session_id = str(uuid.uuid4())
         session = ChatSession(
             id=session_id,
-            title=(request.message[:45] + "...") if len(request.message) > 45 else request.message,
+            title=title_str,
         )
         db.add(session)
         db.commit()
@@ -142,7 +127,7 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
         if not session:
             session = ChatSession(
                 id=session_id,
-                title=(request.message[:45] + "...") if len(request.message) > 45 else request.message,
+                title=title_str,
             )
             db.add(session)
             db.commit()
@@ -152,12 +137,12 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     previous_messages = (
         db.query(ChatMessage)
         .filter(ChatMessage.session_id == session.id)
-        .order_by(ChatMessage.created_at.asc())
+        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
         .all()
     )
 
-    history_payload = [
-        {"role": msg.role, "content": msg.content}
+    history_payload: List[Dict[str, str]] = [
+        {"role": str(msg.role), "content": str(msg.content)}
         for msg in previous_messages
     ]
 
@@ -220,7 +205,12 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
             student_context=student_context,
         )
     except Exception as e:
-        # En caso de error del proveedor LLM, revertir o notificar
+        # En caso de error del proveedor LLM, revertir mensaje para no dejar la sesión en estado inconsistente
+        try:
+            db.delete(user_msg_record)
+            db.commit()
+        except Exception:
+            db.rollback()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Fallo al comunicarse con el proveedor de IA: {str(e)}",
@@ -248,7 +238,7 @@ def get_history(session_id: str, db: Session = Depends(get_db)):
     messages = (
         db.query(ChatMessage)
         .filter(ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.created_at.asc())
+        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
         .all()
     )
 
@@ -301,17 +291,18 @@ def sync_insweb(request: ScraperSyncRequest, db: Session = Depends(get_db)):
     Sincroniza y extrae datos académicos en vivo desde INSWEB con Playwright.
     Extrae: inscripciones actuales, notas finales y parciales por periodo.
     """
+    clean_ci = request.cedula.strip().replace(".", "")
     try:
         res = ejecutar_pipeline_estudiante(
-            cedula=request.cedula,
+            cedula=clean_ci,
             pin=request.pin,
             db=db,
         )
         conteos = res["conteo"]
         return ScraperSyncResponse(
             ok=True,
-            message=f"Datos académicos para C.I. {request.cedula} sincronizados exitosamente.",
-            cedula=request.cedula,
+            message=f"Datos académicos para C.I. {clean_ci} sincronizados exitosamente.",
+            cedula=clean_ci,
             inscripciones_count=conteos["inscripciones"],
             parciales_count=conteos["parciales"],
             notas_count=conteos["notas"],
@@ -326,37 +317,35 @@ def sync_insweb(request: ScraperSyncRequest, db: Session = Depends(get_db)):
 @app.get("/api/estudiantes/{cedula}", response_model=EstudianteSummaryResponse, tags=["Estudiantes"])
 def obtener_estudiante_completo(cedula: str, db: Session = Depends(get_db)):
     """Retorna la ficha académica completa guardada para la cédula dada."""
-    estudiante = db.query(Estudiante).filter(Estudiante.cedula == cedula).first()
+    clean_ci = cedula.strip().replace(".", "")
+    estudiante = db.query(Estudiante).filter(Estudiante.cedula == clean_ci).first()
     if not estudiante:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontraron registros académicos para la C.I. '{cedula}'.",
+            detail=f"No se encontraron registros académicos para la C.I. '{clean_ci}'.",
         )
-    return EstudianteSummaryResponse(
-        cedula=estudiante.cedula,
-        fecha_actualizacion=estudiante.fecha_actualizacion,
-        inscripciones=estudiante.inscripciones,
-        parciales=estudiante.parciales,
-        notas=estudiante.notas,
-    )
+    return EstudianteSummaryResponse.model_validate(estudiante)
 
 
 @app.get("/api/estudiantes/{cedula}/inscripciones", response_model=List[InscripcionItem], tags=["Estudiantes"])
 def obtener_inscripciones_estudiante(cedula: str, db: Session = Depends(get_db)):
     """Retorna las materias matriculadas en el periodo actual."""
-    return db.query(Inscripcion).filter(Inscripcion.cedula == cedula).all()
+    clean_ci = cedula.strip().replace(".", "")
+    return db.query(Inscripcion).filter(Inscripcion.cedula == clean_ci).all()
 
 
 @app.get("/api/estudiantes/{cedula}/parciales", response_model=List[ParcialItem], tags=["Estudiantes"])
 def obtener_parciales_estudiante(cedula: str, db: Session = Depends(get_db)):
     """Retorna el historial de evaluaciones parciales y derechos de examen."""
-    return db.query(Parcial).filter(Parcial.cedula == cedula).all()
+    clean_ci = cedula.strip().replace(".", "")
+    return db.query(Parcial).filter(Parcial.cedula == clean_ci).all()
 
 
 @app.get("/api/estudiantes/{cedula}/notas", response_model=List[NotaFinalItem], tags=["Estudiantes"])
 def obtener_notas_estudiante(cedula: str, db: Session = Depends(get_db)):
     """Retorna el historial de notas finales del estudiante."""
-    return db.query(NotaFinal).filter(NotaFinal.cedula == cedula).all()
+    clean_ci = cedula.strip().replace(".", "")
+    return db.query(NotaFinal).filter(NotaFinal.cedula == clean_ci).all()
 
 
 # -----------------------------------------------------------------------------
@@ -548,12 +537,42 @@ def predecir_aprobacion_endpoint(req: MLPredictRequest):
         )
 
 
+@app.post("/api/ml/predict-sequential", response_model=MLSequentialPredictResponse, tags=["Machine Learning"])
+def predecir_serie_temporal_endpoint(req: MLSequentialPredictRequest):
+    """
+    Predice la probabilidad de aprobación a lo largo de la serie temporal del semestre.
+    Permite hacer predicciones en cualquier momento después del Primer Parcial:
+    - Hito 1: Inmediatamente después del 1er Parcial (solo 'primer_parcial').
+    - Hito 2: Tras entrega de TP / Taller ('primer_parcial' + 'tplab').
+    - Hito 3: Proceso completo ('primer_parcial' + 'tplab' + 'segundo_parcial').
+    """
+    try:
+        resultado = predecir_serie_temporal(
+            materia=req.materia,
+            primer_parcial=req.primer_parcial,
+            tplab=req.tplab,
+            segundo_parcial=req.segundo_parcial,
+        )
+        return resultado
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al calcular la predicción secuencial de serie temporal: {str(e)}"
+        )
+
+
 @app.get("/api/ml/models", tags=["Machine Learning"])
 def listar_modelos_ml():
     """
     Retorna la lista de modelos entrenados disponibles (del 1er parcial y preparados para el 2do parcial).
     """
     return obtener_modelos_disponibles()
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)
+
 
 
 

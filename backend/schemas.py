@@ -95,6 +95,9 @@ class EstudianteSummaryResponse(BaseModel):
     parciales: List[ParcialItem] = []
     notas: List[NotaFinalItem] = []
 
+    class Config:
+        from_attributes = True
+
 
 class LoginRequest(BaseModel):
     cedula: str = Field(..., min_length=3, description="Cédula de Identidad")
@@ -163,6 +166,10 @@ class MLResumenPrediccion(BaseModel):
     probabilidad_promedio: float
     diagnostico: str
     recomendacion: str
+    probabilidad_modelos_clasicos: Optional[float] = None
+    probabilidad_modelos_temporales: Optional[float] = None
+    analisis_serie_temporal: Optional[dict] = None
+
 
 
 class MLPredictResponse(BaseModel):
@@ -172,5 +179,31 @@ class MLPredictResponse(BaseModel):
     inputs: dict
     probabilidades: dict
     resumen: MLResumenPrediccion
+
+
+# Modelos para Predicción Secuencial / Serie Temporal Progresiva
+class MLSequentialPredictRequest(BaseModel):
+    materia: str = Field("ESTATICA", description="Nombre de la asignatura (ej: 'ESTATICA')")
+    primer_parcial: float = Field(..., ge=0, le=100, description="Puntaje obtenido en el 1er Parcial (0 a 100)")
+    tplab: Optional[float] = Field(None, ge=0, le=100, description="Puntaje de Trabajo Práctico / Taller / Lab (opcional)")
+    segundo_parcial: Optional[float] = Field(None, ge=0, le=100, description="Puntaje del 2do Parcial (opcional)")
+
+
+class MLSequentialPredictResponse(BaseModel):
+    materia: str
+    materia_slug: str
+    etapa_temporal: int = Field(..., description="1: Post 1er Parcial, 2: Post TP/Lab, 3: Proceso Completo")
+    hito: str
+    evaluaciones_registradas: dict
+    probabilidad_aprobacion: float = Field(..., description="Probabilidad en porcentaje (0 a 100)")
+    estado_trayectoria: str
+    tendencia: str
+    puntos_acumulados_promedio: float
+    proyeccion_siguiente_evaluacion: dict
+    diagnostico: str
+    recomendacion: str
+    comparativa_modelos: Optional[dict] = Field(None, description="Comparativa entre Ensamble Clásico (Gradient Boosting) y Red Neuronal Recurrente (LSTM)")
+
+
 
 

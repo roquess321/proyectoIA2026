@@ -1,0 +1,32 @@
+{
+  "materia": "ESTATICA",
+  "slug": "estatica",
+  "tipo_arquitectura": "Red Neuronal Recurrente LSTM (PyTorch)",
+  "hiperparametros": {
+    "input_size": 4,
+    "hidden_size": 32,
+    "num_layers": 2,
+    "dropout": 0.2,
+    "epochs": 60,
+    "learning_rate": 0.004,
+    "optimizer": "Adam"
+  },
+  "metricas_por_hito": {
+    "hito_1_primer_parcial": {
+      "auc_roc": 0.8043,
+      "longitud_secuencia": 1
+    },
+    "hito_2_tp_taller": {
+      "auc_roc": 0.8706,
+      "longitud_secuencia": 2
+    },
+    "hito_3_proceso_completo": {
+      "auc_roc": 0.9256,
+      "accuracy": 0.8667,
+      "f1_score": 0.8,
+      "longitud_secuencia": 3
+    }
+  },
+  "total_estudiantes_entrenamiento": 1348,
+  "total_estudiantes_test": 450
+}

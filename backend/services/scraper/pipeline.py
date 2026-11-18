@@ -3,13 +3,18 @@ from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 
 try:
-    from ...models import Estudiante, Inscripcion, Parcial, NotaFinal
-    from .cleaner import sanitizar_datos_estudiante
-    from .insweb_scraper import INSWEBScraper
-except ImportError:
     from backend.models import Estudiante, Inscripcion, Parcial, NotaFinal
     from backend.services.scraper.cleaner import sanitizar_datos_estudiante
     from backend.services.scraper.insweb_scraper import INSWEBScraper
+except ImportError:
+    try:
+        from ...models import Estudiante, Inscripcion, Parcial, NotaFinal
+        from .cleaner import sanitizar_datos_estudiante
+        from .insweb_scraper import INSWEBScraper
+    except ImportError:
+        from models import Estudiante, Inscripcion, Parcial, NotaFinal
+        from services.scraper.cleaner import sanitizar_datos_estudiante
+        from services.scraper.insweb_scraper import INSWEBScraper
 
 
 def persistir_datos_estudiante(cedula: str, datos_limpios: Dict[str, Any], db: Session) -> Dict[str, int]:

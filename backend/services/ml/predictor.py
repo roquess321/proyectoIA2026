@@ -65,11 +65,52 @@ def obtener_modelos_disponibles() -> Dict[str, Any]:
                     except Exception:
                         modelos_p2.append({"materia_slug": entry, "parcial": "segundo_parcial"})
 
+    modelos_series = []
+    dir_series = os.path.join(MODELS_DIR_PACKAGE, "series_temporales")
+    if os.path.exists(dir_series):
+        for entry in os.listdir(dir_series):
+            path = os.path.join(dir_series, entry)
+            if os.path.isdir(path):
+                meta_file = os.path.join(path, "metadata_serie.json")
+                if os.path.exists(meta_file):
+                    try:
+                        with open(meta_file, "r", encoding="utf-8") as f:
+                            modelos_series.append(json.load(f))
+                    except Exception:
+                        pass
+
+    modelos_lstm = []
+    dir_lstm = os.path.join(MODELS_DIR_PACKAGE, "lstm")
+    if os.path.exists(dir_lstm):
+        for entry in os.listdir(dir_lstm):
+            path = os.path.join(dir_lstm, entry)
+            if os.path.isdir(path):
+                meta_file = os.path.join(path, "metadata_lstm.json")
+                if os.path.exists(meta_file):
+                    try:
+                        with open(meta_file, "r", encoding="utf-8") as f:
+                            modelos_lstm.append(json.load(f))
+                    except Exception:
+                        pass
+
     return {
         "primer_parcial": modelos_p1,
         "segundo_parcial": modelos_p2,
-        "modelos_activos": ["Regresión Logística", "Árbol de Decisión", "Random Forest"],
-        "variables_requeridas": ["Primer.Par", "Segundo.Par", "TPLab."]
+        "series_temporales": {
+            "ensamble_clasico": modelos_series,
+            "red_neuronal_lstm": modelos_lstm,
+        },
+        "modelos_activos": [
+            "Regresión Logística (1er Parcial)",
+            "Árbol de Decisión (1er Parcial)",
+            "Random Forest (1er Parcial)",
+            "Ensamble Temporal por Hitos (Gradient Boosting)",
+            "Red Neuronal Recurrente LSTM (PyTorch Deep Learning)",
+        ],
+        "variables_requeridas": {
+            "estatico": ["Primer.Par", "Segundo.Par", "TPLab."],
+            "serie_temporal": ["Primer.Par", "TPLab (opcional)", "Segundo.Par (opcional)"]
+        }
     }
 
 
@@ -160,56 +201,117 @@ def predecir_aprobacion(
     rf_model = modelos["rf"]
     proba_rf = float(rf_model.predict_proba(input_df)[0, 1])
 
-    # Porcentajes redondeados a 1 decimal
+    # Porcentajes de los 3 modelos clásicos
     pct_lr = round(proba_lr * 100, 1)
     pct_dt = round(proba_dt * 100, 1)
     pct_rf = round(proba_rf * 100, 1)
-    pct_promedio = round((pct_lr + pct_dt + pct_rf) / 3.0, 1)
+    pct_clasico = round((pct_lr + pct_dt + pct_rf) / 3.0, 1)
 
-    # Veredicto cualitativo
+    # 4. Inferencia con los Modelos de Serie Temporal (Ensamble Temporal + Red Neuronal LSTM)
+    res_temporal = None
+    pct_temporal_gb = None
+    pct_lstm = None
+    try:
+        from .sequential_tracker import predecir_serie_temporal
+        res_temporal = predecir_serie_temporal(
+            materia=materia,
+            primer_parcial=float(primer_parcial),
+            tplab=float(tplab),
+            segundo_parcial=float(segundo_parcial),
+        )
+        comp = res_temporal.get("comparativa_modelos", {})
+        pct_temporal_gb = comp.get("ensamble_clasico", {}).get("probabilidad")
+        pct_lstm = comp.get("red_neuronal_lstm", {}).get("probabilidad")
+    except Exception as e:
+        print(f"Aviso: no se pudo calcular inferencia temporal completa: {e}")
+
+    # Calcular consenso global con todos los modelos disponibles
+    todos_porcentajes = [pct_lr, pct_dt, pct_rf]
+    if pct_temporal_gb is not None:
+        todos_porcentajes.append(pct_temporal_gb)
+    if pct_lstm is not None:
+        todos_porcentajes.append(pct_lstm)
+
+    pct_promedio = round(sum(todos_porcentajes) / len(todos_porcentajes), 1)
+    pct_temporal_avg = res_temporal.get("probabilidad_aprobacion") if res_temporal else None
+
+    # Veredicto cualitativo enriquecido con la trayectoria temporal
+    tendencia_str = f" con tendencia {res_temporal['tendencia'].lower()}" if res_temporal and "tendencia" in res_temporal else ""
+
     if pct_promedio >= 70.0:
-        diagnostico = "Alta probabilidad de aprobar"
-        recomendacion = "Excelente rendimiento en parciales y taller. Mantén el ritmo para asegurar la firma y preparar el examen final."
+        diagnostico = f"Alta probabilidad de aprobar{tendencia_str}"
+        recomendacion = "Excelente rendimiento en todas las evaluaciones de proceso. Mantén el ritmo para asegurar una calificación sobresaliente en el examen final."
     elif pct_promedio >= 50.0:
-        diagnostico = "Probabilidad moderada de aprobar"
-        recomendacion = "Estás en zona de aprobación según la mayoría de los modelos, pero no debes descuidar la preparación del examen final."
+        diagnostico = f"Probabilidad moderada de aprobar{tendencia_str}"
+        recomendacion = "Estás en zona de aprobación según el consenso de modelos clásicos y la serie temporal, pero debes consolidar los temas débiles para el examen final."
     else:
-        diagnostico = "Riesgo de no aprobación"
-        recomendacion = "Los puntajes actuales sitúan el pronóstico por debajo del umbral de aprobación. Es recomendable reforzar temas clave y maximizar el rendimiento."
+        diagnostico = f"Riesgo de no aprobación{tendencia_str}"
+        recomendacion = "Los puntajes actuales sitúan el pronóstico en zona de riesgo. Es indispensable maximizar el puntaje en el examen final o recurrir a los periodos extraordinarios/recuperatorios."
+
+    probabilidades_dict: Dict[str, Any] = {
+        "regresion_logistica": {
+            "nombre": "Regresión Logística",
+            "probabilidad": pct_lr,
+            "prediccion": "Aprueba" if pct_lr >= 50.0 else "No Aprueba",
+            "descripcion": "Modelo lineal probabilístico base"
+        },
+        "arbol_decision": {
+            "nombre": "Árbol de Decisión",
+            "probabilidad": pct_dt,
+            "prediccion": "Aprueba" if pct_dt >= 50.0 else "No Aprueba",
+            "descripcion": "Modelo no lineal jerárquico"
+        },
+        "random_forest": {
+            "nombre": "Random Forest",
+            "probabilidad": pct_rf,
+            "prediccion": "Aprueba" if pct_rf >= 50.0 else "No Aprueba",
+            "descripcion": "Ensamble de 200 árboles de decisión"
+        }
+    }
+
+    if pct_temporal_gb is not None:
+        probabilidades_dict["ensamble_temporal_gb"] = {
+            "nombre": "Ensamble Temporal (Gradient Boosting)",
+            "probabilidad": pct_temporal_gb,
+            "prediccion": "Aprueba" if pct_temporal_gb >= 50.0 else "No Aprueba",
+            "descripcion": "Modelo de serie temporal por etapas y deltas dinámicos"
+        }
+
+    if pct_lstm is not None:
+        probabilidades_dict["red_neuronal_lstm"] = {
+            "nombre": "Red Neuronal Recurrente (LSTM)",
+            "probabilidad": pct_lstm,
+            "prediccion": "Aprueba" if pct_lstm >= 50.0 else "No Aprueba",
+            "descripcion": "Deep Learning recurrente con compuertas de memoria (PyTorch)"
+        }
+
+    resumen_dict: Dict[str, Any] = {
+        "probabilidad_promedio": pct_promedio,
+        "diagnostico": diagnostico,
+        "recomendacion": recomendacion,
+        "probabilidad_modelos_clasicos": pct_clasico,
+        "probabilidad_modelos_temporales": pct_temporal_avg,
+    }
+
+    if res_temporal:
+        resumen_dict["analisis_serie_temporal"] = {
+            "tendencia": res_temporal.get("tendencia"),
+            "estado_trayectoria": res_temporal.get("estado_trayectoria"),
+            "puntos_acumulados_promedio": res_temporal.get("puntos_acumulados_promedio"),
+            "proyeccion_siguiente_evaluacion": res_temporal.get("proyeccion_siguiente_evaluacion"),
+            "comparativa": res_temporal.get("comparativa_modelos", {}).get("consenso")
+        }
 
     return {
         "materia": materia,
         "materia_modelo": modelos["slug"].upper(),
-        "parcial_origen": "primer_parcial",
+        "parcial_origen": "proceso_completo",
         "inputs": {
             "primer_parcial": float(primer_parcial),
             "segundo_parcial": float(segundo_parcial),
             "tplab": float(tplab)
         },
-        "probabilidades": {
-            "regresion_logistica": {
-                "nombre": "Regresión Logística",
-                "probabilidad": pct_lr,
-                "prediccion": "Aprueba" if pct_lr >= 50.0 else "No Aprueba",
-                "descripcion": "Modelo lineal probabilístico base"
-            },
-            "arbol_decision": {
-                "nombre": "Árbol de Decisión",
-                "probabilidad": pct_dt,
-                "prediccion": "Aprueba" if pct_dt >= 50.0 else "No Aprueba",
-                "descripcion": "Modelo no lineal jerárquico"
-            },
-            "random_forest": {
-                "nombre": "Random Forest",
-                "probabilidad": pct_rf,
-                "prediccion": "Aprueba" if pct_rf >= 50.0 else "No Aprueba",
-                "descripcion": "Ensamble de 200 árboles de decisión"
-            }
-        },
-        "resumen": {
-            "probabilidad_promedio": pct_promedio,
-            "diagnostico": diagnostico,
-            "recomendacion": recomendacion
-        }
+        "probabilidades": probabilidades_dict,
+        "resumen": resumen_dict
     }
 

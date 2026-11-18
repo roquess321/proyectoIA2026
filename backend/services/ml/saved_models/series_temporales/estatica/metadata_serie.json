@@ -1,0 +1,34 @@
+{
+  "materia": "ESTATICA",
+  "slug": "estatica",
+  "tipo_modelo": "Serie Temporal Multi-Hito / Proceso Secuencial",
+  "metricas": {
+    "hito_1_primer_parcial": {
+      "auc_roc": 0.8124,
+      "variables": [
+        "Primer.Par"
+      ]
+    },
+    "hito_2_tp_taller": {
+      "auc_roc": 0.9212,
+      "variables": [
+        "Primer.Par",
+        "TPLab.",
+        "delta_tp_pp",
+        "avg_tp_pp"
+      ]
+    },
+    "hito_3_proceso_completo": {
+      "auc_roc": 0.9816,
+      "variables": [
+        "Primer.Par",
+        "Segundo.Par",
+        "TPLab.",
+        "delta_tp_pp",
+        "delta_sp_pp",
+        "promedio_proceso"
+      ]
+    }
+  },
+  "total_registros_entrenamiento": 1798
+}
