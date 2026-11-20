@@ -94,7 +94,7 @@
 			class="p-space-xs rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors cursor-pointer"
 			title="Sincronización Rápida"
 			type="button"
-			onclick={() => academicState.forceRescrape()}
+			onclick={() => academicState.forceRescrape(authState.user?.cedula)}
 		>
 			<span
 				class="material-symbols-outlined text-xl {academicState.isRescraping ? 'animate-spin' : ''}"

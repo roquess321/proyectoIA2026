@@ -244,11 +244,19 @@ def predecir_serie_temporal(
         }
 
     else:
-        # --- HITO 3: Proceso Completo (1er Parcial + TP + 2do Parcial) ---
+        # --- HITO 3: Proceso Completo (1er Parcial + TP + 2do Parcial o Solo Parciales) ---
         etapa = 3
-        tp = max(0.0, min(100.0, float(tplab))) if tiene_tplab else 0.0
-        sp = max(0.0, min(100.0, float(segundo_parcial)))
-        hito_nombre = "Hito 3: Serie Temporal Completa (Fin de Proceso)"
+        sp = max(0.0, min(100.0, float(segundo_parcial))) if segundo_parcial is not None else 0.0
+        if tiene_tplab and tplab is not None:
+            tp = max(0.0, min(100.0, float(tplab)))
+            hito_nombre = "Hito 3: Serie Temporal Completa (Fin de Proceso)"
+            nota_proceso = (p1 * 0.35) + (sp * 0.35) + (tp * 0.30)
+        else:
+            # Materia sin laboratorio/TP: valor neutro para no penalizar con 0.0
+            tp = (p1 + sp) / 2.0
+            hito_nombre = "Hito 3: Parciales Completos (Sin Lab/TP)"
+            nota_proceso = (p1 + sp) / 2.0
+
         m3 = modelos["m3"]
 
         delta_tp = tp - p1
@@ -271,8 +279,6 @@ def predecir_serie_temporal(
         else:
             tendencia = f"Rendimiento regular continuo (variación de {delta_sp:+.1f} pts)"
 
-        # Ponderación oficial estimada
-        nota_proceso = (p1 * 0.35) + (sp * 0.35) + (tp * 0.30)
         firma = nota_proceso >= 60.0
 
         if prob_aprueba >= 60.0:

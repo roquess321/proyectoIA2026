@@ -5,9 +5,27 @@
 		subjects: SubjectSimulation[];
 		selectedSubjectId: string;
 		onSubjectChange: (id: string) => void;
+		bestAuc?: number | null;
+		sampleCount?: number | null;
+		activeModelsCount?: number | null;
+		isBackendLive?: boolean;
 	}
 
-	let { subjects, selectedSubjectId, onSubjectChange }: Props = $props();
+	let {
+		subjects,
+		selectedSubjectId,
+		onSubjectChange,
+		bestAuc = null,
+		sampleCount = null,
+		activeModelsCount = null,
+		isBackendLive = false
+	}: Props = $props();
+
+	let aucDisplay = $derived(
+		bestAuc !== null && bestAuc !== undefined ? `${(bestAuc * 100).toFixed(1)}%` : '98.2%'
+	);
+	let samplesDisplay = $derived(sampleCount ?? 1798);
+	let modelsDisplay = $derived(activeModelsCount ?? 5);
 </script>
 
 <div class="grid grid-cols-12 gap-space-md">
@@ -63,22 +81,30 @@
 		</div>
 	</div>
 
-	<!-- Quick Vital Cohort Card -->
+	<!-- Quick Vital Cohort Card (Métricas reales desde GET /api/ml/models) -->
 	<div
 		class="col-span-12 lg:col-span-4 bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-center justify-between"
 	>
 		<div class="flex flex-col">
-			<span class="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
-				Confianza del Algoritmo
-			</span>
+			<div class="flex items-center gap-1.5">
+				<span class="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">
+					AUC-ROC Validado (GB H3)
+				</span>
+				<span
+					class="w-2 h-2 rounded-full {isBackendLive ? 'bg-emerald-500' : 'bg-amber-500'}"
+					title={isBackendLive ? 'Conectado al catálogo /api/ml/models' : 'Valores validados del modelo guardado'}
+				></span>
+			</div>
 			<div class="flex items-baseline gap-space-xs">
-				<span class="font-headline-md text-headline-md font-bold text-primary">94.8%</span>
+				<span class="font-headline-md text-headline-md font-bold text-primary font-code-num">
+					{aucDisplay}
+				</span>
 				<span class="font-code-num text-code-num text-secondary font-semibold">
-					N=1,420 casos
+					N={samplesDisplay} registros
 				</span>
 			</div>
 			<span class="font-body-sm text-body-sm text-outline mt-0.5">
-				Basado en cohortes reales 2018–2024
+				{modelsDisplay} modelos activos (ML Clásico + LSTM)
 			</span>
 		</div>
 		<div

@@ -1,13 +1,28 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import { academicState } from "../lib/academic-state.svelte";
     import { authState } from "../lib/auth-state.svelte";
     import { goto } from "$app/navigation";
     import {
         loginLocalUser,
         registerLocalUser,
-        linkInswebAccount,
+        linkInswebAccountStream,
         type LinkInswebResult
     } from "../lib/services/auth";
+
+    let logContainer = $state<HTMLDivElement | null>(null);
+
+    onMount(() => {
+        academicState.activeNav = "acceso-insweb";
+        void academicState.forceRescrape(authState.user?.cedula);
+    });
+
+    $effect(() => {
+        const count = academicState.logs.length;
+        if (count > 0 && logContainer) {
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+    });
 
     // Pestaña activa cuando no está autenticado: 'login' | 'register'
     let activeAuthTab = $state<"login" | "register">("login");
@@ -150,26 +165,39 @@
             return;
         }
 
+        const cedula = authState.user.cedula;
         isSyncing = true;
-        academicState.isRescraping = true;
-        academicState.pipelineStatus = "Iniciando scraper silencioso...";
+        academicState.resetPipelineForRun(cedula);
+        let receivedStreamError = false;
 
         try {
-            const res = await linkInswebAccount(authState.user.cedula, inswebPin);
+            const res = await linkInswebAccountStream(cedula, inswebPin, (ev) => {
+                if (ev.type === "error") {
+                    receivedStreamError = true;
+                }
+                academicState.applyStreamEvent(ev);
+            });
             syncDetails = res;
             syncSuccess = true;
 
             const nowStr = new Date().toLocaleString();
             authState.setSynced(true, nowStr);
-            academicState.pipelineStatus = "Sincronización Completada";
 
             inswebPin = "";
+            void academicState.forceRescrape(cedula);
         } catch (err: unknown) {
-            syncError = err instanceof Error ? err.message : "Error al vincular con InsWeb.";
-            academicState.pipelineStatus = "Error en extracción";
+            const errMsg = err instanceof Error ? err.message : "Error al vincular con InsWeb.";
+            syncError = errMsg;
+            if (!receivedStreamError) {
+                academicState.applyStreamEvent({
+                    type: "error",
+                    ok: false,
+                    detail: errMsg
+                });
+            }
+            academicState.isScrapingLive = false;
         } finally {
             isSyncing = false;
-            academicState.isRescraping = false;
         }
     }
 
@@ -752,7 +780,15 @@
                     class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm pb-space-xs"
                 >
                     <div class="flex items-center gap-space-sm">
-                        <div class="w-2.5 h-2.5 rounded-full bg-secondary"></div>
+                        <div
+                            class="w-2.5 h-2.5 rounded-full {academicState.isScrapingLive
+                                ? 'bg-emerald-500 animate-ping'
+                                : academicState.backendOnline === true
+                                  ? 'bg-emerald-500'
+                                  : academicState.backendOnline === false
+                                    ? 'bg-error'
+                                    : 'bg-slate-400 animate-pulse'}"
+                        ></div>
                         <div>
                             <h2
                                 class="font-headline-sm text-headline-sm text-on-surface font-bold"
@@ -767,8 +803,9 @@
                         </div>
                     </div>
                     <button
-                        class="px-space-sm py-1.5 bg-surface-container-low hover:bg-surface-container text-on-surface rounded font-label-sm text-label-sm flex items-center gap-space-xs shadow-sm transition-all active:scale-95 self-start sm:self-auto"
-                        onclick={() => academicState.forceRescrape()}
+                        class="px-space-sm py-1.5 bg-surface-container-low hover:bg-surface-container text-on-surface rounded font-label-sm text-label-sm flex items-center gap-space-xs shadow-sm transition-all active:scale-95 self-start sm:self-auto disabled:opacity-60 cursor-pointer"
+                        disabled={academicState.isRescraping}
+                        onclick={() => academicState.forceRescrape(authState.user?.cedula)}
                         type="button"
                     >
                         <span
@@ -778,7 +815,7 @@
                         >
                             refresh
                         </span>
-                        <span>Verificar Latencia</span>
+                        <span>Verificar Diagnóstico</span>
                     </button>
                 </div>
 
@@ -789,25 +826,41 @@
                         <span
                             class="font-label-sm text-label-sm uppercase text-outline"
                         >
-                            Latencia InsWeb
+                            Latencia API FastAPI
                         </span>
                         <div class="flex items-baseline gap-1">
                             <span
                                 class="font-code-num text-headline-sm font-bold text-on-surface"
                             >
-                                {academicState.latency}
+                                {academicState.latency !== null ? academicState.latency : "--"}
                             </span>
                             <span
                                 class="font-code-num text-code-num text-on-surface-variant"
                                 >ms</span
                             >
                         </div>
-                        <span
-                            class="font-label-sm text-label-sm text-emerald-700 flex items-center gap-0.5"
-                        >
-                            <span class="material-symbols-outlined text-xs">check_circle</span>
-                            Servidor Nominal
-                        </span>
+                        {#if academicState.backendOnline === true}
+                            <span
+                                class="font-label-sm text-label-sm text-emerald-700 dark:text-emerald-400 flex items-center gap-0.5"
+                            >
+                                <span class="material-symbols-outlined text-xs">check_circle</span>
+                                Servidor Online
+                            </span>
+                        {:else if academicState.backendOnline === false}
+                            <span
+                                class="font-label-sm text-label-sm text-error flex items-center gap-0.5"
+                            >
+                                <span class="material-symbols-outlined text-xs">error</span>
+                                Sin conexión
+                            </span>
+                        {:else}
+                            <span
+                                class="font-label-sm text-label-sm text-on-surface-variant flex items-center gap-0.5"
+                            >
+                                <span class="material-symbols-outlined text-xs">schedule</span>
+                                Verificando...
+                            </span>
+                        {/if}
                     </div>
 
                     <div
@@ -822,14 +875,32 @@
                             <span
                                 class="font-code-num text-headline-sm font-bold text-on-surface"
                             >
-                                Silencioso
+                                {#if academicState.isScrapingLive || academicState.activeJobs > 0}
+                                    Ejecutando
+                                {:else if academicState.playwrightReady === true}
+                                    Listo
+                                {:else if academicState.playwrightReady === false}
+                                    Inactivo
+                                {:else}
+                                    --
+                                {/if}
                             </span>
                         </div>
                         <span
-                            class="font-label-sm text-label-sm text-secondary flex items-center gap-0.5"
+                            class="font-label-sm text-label-sm {academicState.playwrightReady === false
+                                ? 'text-error'
+                                : academicState.isScrapingLive
+                                  ? 'text-emerald-700 dark:text-emerald-400'
+                                  : 'text-secondary'} flex items-center gap-0.5"
                         >
-                            <span class="material-symbols-outlined text-xs">bolt</span>
-                            Headless Chromium
+                            <span class="material-symbols-outlined text-xs">
+                                {academicState.isScrapingLive ? "autorenew" : "bolt"}
+                            </span>
+                            {academicState.playwrightReady === false
+                                ? "Playwright no instalado"
+                                : academicState.isScrapingLive
+                                  ? "Playwright activo"
+                                  : "Headless Chromium"}
                         </span>
                     </div>
 
@@ -847,24 +918,37 @@
                             >
                         </div>
                         <span
-                            class="font-label-sm text-label-sm text-on-surface-variant flex items-center gap-0.5"
+                            class="font-label-sm text-label-sm text-on-surface-variant flex items-center gap-0.5 truncate"
                         >
-                            <span class="material-symbols-outlined text-xs">storage</span>
-                            copilot.db
+                            <span class="material-symbols-outlined text-xs shrink-0">storage</span>
+                            {#if academicState.sqliteReady === false}
+                                <span class="text-error">Sin conexión</span>
+                            {:else if academicState.studentCounts}
+                                <span class="truncate">
+                                    {academicState.studentCounts.inscripciones} insc. • {academicState.studentCounts.parciales} parc. • {academicState.studentCounts.notas} actas
+                                </span>
+                            {:else if academicState.estudiantesCount !== null}
+                                <span class="truncate">
+                                    {academicState.estudiantesCount} perfiles en copilot.db
+                                </span>
+                            {:else}
+                                <span>copilot.db</span>
+                            {/if}
                         </span>
                     </div>
                 </div>
 
                 <div class="flex flex-col gap-space-xs pt-space-xs">
-                    <div class="flex items-center justify-between mb-space-xs">
+                    <div class="flex items-center justify-between gap-2 mb-space-xs">
                         <span
                             class="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant font-semibold"
                         >
                             Fases del Pipeline de Extracción
                         </span>
                         <span
-                            class="font-code-num text-code-num text-secondary font-semibold"
+                            class="font-code-num text-code-num text-secondary font-semibold truncate max-w-[60%] text-right"
                             id="pipeline-status-text"
+                            title={academicState.pipelineStatus}
                         >
                             {academicState.pipelineStatus}
                         </span>
@@ -873,132 +957,74 @@
                     <div
                         class="flex flex-col gap-3 relative before:absolute before:left-3 before:top-3 before:bottom-3 before:w-0.5 before:bg-surface-container-high"
                     >
-                        <div class="flex items-start gap-space-md relative pl-1">
-                            <span
-                                class="z-10 flex h-5 w-5 rounded-full bg-emerald-500 text-on-error items-center justify-center shadow-sm"
-                            >
-                                <span class="material-symbols-outlined text-xs">done</span>
-                            </span>
-                            <div
-                                class="flex-1 bg-surface-container-low p-space-sm rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-sm"
-                            >
-                                <div class="flex flex-col">
+                        {#each academicState.steps as step (step.id)}
+                            <div class="flex items-start gap-space-md relative pl-1">
+                                <span
+                                    class="z-10 flex h-5 w-5 rounded-full items-center justify-center shadow-sm shrink-0 {step.status === 'done'
+                                        ? 'bg-emerald-500 text-white'
+                                        : step.status === 'running'
+                                          ? 'bg-primary text-on-primary'
+                                          : step.status === 'error'
+                                            ? 'bg-error text-on-error'
+                                            : 'bg-surface-container-high text-on-surface-variant'}"
+                                >
                                     <span
-                                        class="font-body-md text-body-md font-semibold text-on-surface leading-snug"
+                                        class="material-symbols-outlined text-xs {step.status === 'running'
+                                            ? 'animate-spin'
+                                            : ''}"
                                     >
-                                        Handshake HTTPS insweb.ing.una.py
+                                        {#if step.status === "done"}
+                                            done
+                                        {:else if step.status === "running"}
+                                            autorenew
+                                        {:else if step.status === "error"}
+                                            error
+                                        {:else}
+                                            schedule
+                                        {/if}
                                     </span>
-                                    <span
-                                        class="font-label-sm text-label-sm text-on-surface-variant"
-                                    >
-                                        Validación de sesión con C.I. y PIN
-                                    </span>
-                                </div>
-                                <div class="flex items-center gap-space-xs">
-                                    <span
-                                        class="px-2 py-0.5 rounded font-label-sm text-label-sm bg-emerald-100 text-emerald-800 font-semibold uppercase"
-                                    >
-                                        Listo
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="flex items-start gap-space-md relative pl-1">
-                            <span
-                                class="z-10 flex h-5 w-5 rounded-full bg-emerald-500 text-on-error items-center justify-center shadow-sm"
-                            >
-                                <span class="material-symbols-outlined text-xs">done</span>
-                            </span>
-                            <div
-                                class="flex-1 bg-surface-container-low p-space-sm rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-sm"
-                            >
-                                <div class="flex flex-col">
-                                    <span
-                                        class="font-body-md text-body-md font-semibold text-on-surface leading-snug"
-                                    >
-                                        Extracción de Ficha Alumno
-                                    </span>
-                                    <span
-                                        class="font-label-sm text-label-sm text-on-surface-variant"
-                                    >
-                                        Parsing de Cédula y carrera universitaria
-                                    </span>
-                                </div>
-                                <div class="flex items-center gap-space-xs">
-                                    <span
-                                        class="px-2 py-0.5 rounded font-label-sm text-label-sm bg-emerald-100 text-emerald-800 font-semibold uppercase"
-                                    >
-                                        Listo
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="flex items-start gap-space-md relative pl-1">
-                            <span
-                                class="z-10 flex h-5 w-5 rounded-full bg-emerald-500 text-on-error items-center justify-center shadow-sm"
-                            >
-                                <span class="material-symbols-outlined text-xs">done</span>
-                            </span>
-                            <div
-                                class="flex-1 bg-surface-container-low p-space-sm rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-sm"
-                            >
-                                <div class="flex flex-col">
-                                    <span
-                                        class="font-body-md text-body-md font-semibold text-on-surface leading-snug"
-                                    >
-                                        Scraping de Calificaciones Históricas
-                                    </span>
-                                    <span
-                                        class="font-label-sm text-label-sm text-on-surface-variant"
-                                    >
-                                        Actas de exámenes, ponderaciones y estado de aprobación
-                                    </span>
-                                </div>
-                                <div class="flex items-center gap-space-xs">
-                                    <span
-                                        class="px-2 py-0.5 rounded font-label-sm text-label-sm bg-emerald-100 text-emerald-800 font-semibold uppercase"
-                                    >
-                                        Listo
-                                    </span>
+                                </span>
+                                <div
+                                    class="flex-1 bg-surface-container-low p-space-sm rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-sm border {step.status === 'running'
+                                        ? 'border-primary/40'
+                                        : step.status === 'error'
+                                          ? 'border-error/40 bg-error/5'
+                                          : 'border-transparent'}"
+                                >
+                                    <div class="flex flex-col min-w-0">
+                                        <span
+                                            class="font-body-md text-body-md font-semibold text-on-surface leading-snug"
+                                        >
+                                            {step.title}
+                                        </span>
+                                        <span
+                                            class="font-label-sm text-label-sm {step.status === 'error'
+                                                ? 'text-error'
+                                                : 'text-on-surface-variant'} break-words"
+                                        >
+                                            {step.description}
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center gap-space-xs shrink-0">
+                                        <span
+                                            class="px-2 py-0.5 rounded font-label-sm text-label-sm font-semibold uppercase {step.status === 'done'
+                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300'
+                                                : step.status === 'running'
+                                                  ? 'bg-primary/15 text-primary'
+                                                  : step.status === 'error'
+                                                    ? 'bg-error/15 text-error'
+                                                    : 'bg-surface-container-high text-on-surface-variant'}"
+                                        >
+                                            {step.badgeText}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-
-                        <div class="flex items-start gap-space-md relative pl-1">
-                            <span
-                                class="z-10 flex h-5 w-5 rounded-full bg-secondary text-on-primary items-center justify-center shadow-sm"
-                            >
-                                <span class="material-symbols-outlined text-xs">database</span>
-                            </span>
-                            <div
-                                class="flex-1 bg-surface-container-low p-space-sm rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-sm"
-                            >
-                                <div class="flex flex-col">
-                                    <span
-                                        class="font-body-md text-body-md font-semibold text-on-surface leading-snug"
-                                    >
-                                        Persistencia Relacional SQLite
-                                    </span>
-                                    <span
-                                        class="font-label-sm text-label-sm text-on-surface-variant"
-                                    >
-                                        Enlace de tablas por clave foránea <code>cedula</code>
-                                    </span>
-                                </div>
-                                <div class="flex items-center gap-space-xs">
-                                    <span
-                                        class="px-2 py-0.5 rounded font-label-sm text-label-sm bg-secondary text-on-secondary font-semibold uppercase"
-                                    >
-                                        Activo
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
+                        {/each}
                     </div>
                 </div>
 
+                <!-- Barra de Progreso Real -->
                 <div
                     class="bg-surface-container rounded-lg p-space-md flex flex-col gap-space-xs"
                 >
@@ -1006,27 +1032,91 @@
                         <span
                             class="font-label-sm text-label-sm uppercase font-semibold text-on-surface"
                         >
-                            Seguridad &amp; Privacidad Local
+                            Progreso de Extracción en Vivo
                         </span>
                         <span
-                            class="font-code-num text-code-num text-emerald-700 font-semibold"
+                            class="font-code-num text-code-num font-semibold {academicState.steps.some((s) => s.status === 'error')
+                                ? 'text-error'
+                                : academicState.progress === 100
+                                  ? 'text-emerald-700 dark:text-emerald-400'
+                                  : 'text-secondary'}"
                         >
-                            100% Sin Ventana Headful
+                            {academicState.progress}%
                         </span>
                     </div>
                     <div
                         class="w-full bg-surface-container-high h-2 rounded overflow-hidden"
                     >
                         <div
-                            class="bg-secondary h-full rounded transition-all duration-700"
-                            style="width: 100%;"
+                            class="h-full rounded transition-all duration-500 {academicState.steps.some((s) => s.status === 'error')
+                                ? 'bg-error'
+                                : academicState.progress === 100
+                                  ? 'bg-emerald-500'
+                                  : 'bg-secondary'}"
+                            style="width: {academicState.progress}%;"
                         ></div>
                     </div>
                     <div
-                        class="flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm mt-0.5"
+                        class="flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm mt-0.5 gap-2"
                     >
-                        <span>Cifrado PBKDF2</span>
-                        <span>Ejecución en segundo plano</span>
+                        <span class="truncate">Modo Headless (Playwright) • SSE</span>
+                        <span class="shrink-0">
+                            {academicState.lastCheckTime
+                                ? `Último chequeo: ${academicState.lastCheckTime}`
+                                : "Sin chequeo previo"}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Consola de Telemetría en Vivo -->
+                <div
+                    class="bg-surface-container-low rounded-lg border border-outline-variant/30 flex flex-col overflow-hidden"
+                >
+                    <div
+                        class="px-space-sm py-1.5 bg-surface-container flex items-center justify-between border-b border-outline-variant/20"
+                    >
+                        <div class="flex items-center gap-1.5">
+                            <span class="material-symbols-outlined text-sm text-secondary">terminal</span>
+                            <span class="font-label-sm text-label-sm uppercase font-semibold text-on-surface">
+                                Consola de Telemetría en Vivo
+                            </span>
+                        </div>
+                        {#if academicState.logs.length > 0}
+                            <button
+                                type="button"
+                                class="font-label-sm text-[11px] text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                                onclick={() => academicState.clearLogs()}
+                            >
+                                Limpiar
+                            </button>
+                        {/if}
+                    </div>
+                    <div
+                        bind:this={logContainer}
+                        class="p-space-sm max-h-40 overflow-y-auto font-code-num text-xs flex flex-col gap-1"
+                    >
+                        {#if academicState.logs.length === 0}
+                            <span class="text-on-surface-variant">
+                                Esperando eventos de diagnóstico o sincronización...
+                            </span>
+                        {:else}
+                            {#each academicState.logs as entry (entry.id)}
+                                <div class="flex items-start gap-2 leading-snug">
+                                    <span class="text-outline shrink-0">[{entry.time}]</span>
+                                    <span
+                                        class="{entry.level === 'error'
+                                            ? 'text-error'
+                                            : entry.level === 'warn'
+                                              ? 'text-amber-700 dark:text-amber-400'
+                                              : entry.level === 'success'
+                                                ? 'text-emerald-700 dark:text-emerald-400'
+                                                : 'text-on-surface'} break-words"
+                                    >
+                                        {entry.message}
+                                    </span>
+                                </div>
+                            {/each}
+                        {/if}
                     </div>
                 </div>
             </div>
@@ -1047,9 +1137,19 @@
                         <span class="font-body-md text-body-md font-semibold text-on-surface truncate">
                             insweb.ing.una.py:443
                         </span>
-                        <span class="font-code-num text-code-num text-emerald-700">
-                            Online / Silencioso
-                        </span>
+                        {#if academicState.inswebReachable === true}
+                            <span class="font-code-num text-code-num text-emerald-700 dark:text-emerald-400">
+                                Online ({academicState.inswebLatencyMs ?? "--"} ms)
+                            </span>
+                        {:else if academicState.inswebReachable === false}
+                            <span class="font-code-num text-code-num text-error">
+                                Sin respuesta / Timeout
+                            </span>
+                        {:else}
+                            <span class="font-code-num text-code-num text-on-surface-variant">
+                                Verificando...
+                            </span>
+                        {/if}
                     </div>
                 </div>
 
@@ -1068,9 +1168,19 @@
                         <span class="font-body-md text-body-md font-semibold text-on-surface truncate">
                             FastAPI /api/auth
                         </span>
-                        <span class="font-code-num text-code-num text-secondary">
-                            SQLite Vinculado
-                        </span>
+                        {#if academicState.backendOnline === true && academicState.sqliteReady !== false}
+                            <span class="font-code-num text-code-num text-emerald-700 dark:text-emerald-400">
+                                SQLite Conectado
+                            </span>
+                        {:else if academicState.backendOnline === false}
+                            <span class="font-code-num text-code-num text-error">
+                                Desconectado
+                            </span>
+                        {:else}
+                            <span class="font-code-num text-code-num text-on-surface-variant">
+                                Verificando...
+                            </span>
+                        {/if}
                     </div>
                 </div>
             </div>

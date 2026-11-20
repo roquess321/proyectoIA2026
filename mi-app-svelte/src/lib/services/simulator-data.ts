@@ -1,5 +1,5 @@
 import type { SubjectSimulation } from "../types/simulator";
-import type { EstudianteSummary } from "./scraper";
+import type { EstudianteSummary, ParcialData } from "./scraper";
 import type { UserSession } from "../auth-state.svelte";
 import { cleanAcademicText } from "./dashboard-stats";
 import {
@@ -41,6 +41,12 @@ function getCriticalTopic(subjectName: string): string {
     return "Integración Múltiple, Campos Vectoriales y Teorema de Green";
   if (norm.includes("ALGEBRA"))
     return "Espacios Vectoriales y Diagonalización de Matrices";
+  if (norm.includes("PROBAB"))
+    return "Variables Aleatorias, Distribuciones y Teorema de Bayes";
+  if (norm.includes("ECUACIONES"))
+    return "EDOs de Segundo Orden, Laplace y Sistemas Lineales";
+  if (norm.includes("VECTORIAL"))
+    return "Campos Vectoriales, Integrales de Línea y Teorema de Stokes";
   return "Contenidos Clave del Programa Oficial FIUNA";
 }
 
@@ -52,8 +58,48 @@ function normalizeStr(str: string): string {
     .replace(/[^a-z0-9]/g, "");
 }
 
+function getLatestPeriodParciales(
+  parciales: ParcialData[],
+  normName: string,
+): { items: ParcialData[]; latestPeriod: string | null } {
+  // Priorizar coincidencia exacta; si no existe, coincidencia parcial
+  const exact = parciales.filter(
+    (p) => normalizeStr(cleanAcademicText(p.asignatura)) === normName,
+  );
+  const candidates =
+    exact.length > 0
+      ? exact
+      : parciales.filter((p) => {
+          const normP = normalizeStr(cleanAcademicText(p.asignatura));
+          return normP.includes(normName) || normName.includes(normP);
+        });
+
+  if (candidates.length === 0) {
+    return { items: [], latestPeriod: null };
+  }
+
+  const periods = Array.from(
+    new Set(
+      candidates
+        .map((p) => p.periodo?.trim() || "")
+        .filter((per) => per.length > 0),
+    ),
+  ).sort((a, b) => b.localeCompare(a));
+
+  if (periods.length === 0) {
+    return { items: candidates, latestPeriod: null };
+  }
+
+  const latestPeriod = periods[0];
+  return {
+    items: candidates.filter((p) => (p.periodo?.trim() || "") === latestPeriod),
+    latestPeriod,
+  };
+}
+
 /**
  * Genera la lista de materias para el simulador a partir de las asignaturas en curso y parciales del estudiante en SQLite.
+ * Respeta la escala natural 0-100 de SQLite sin forzar conversiones ni inventar laboratorios inexistentes.
  */
 export function buildSimulatorSubjects(
   summary: EstudianteSummary | null,
@@ -74,23 +120,32 @@ export function buildSimulatorSubjects(
     const cleanName = cleanAcademicText(rawName);
     const normName = normalizeStr(cleanName);
 
-    // Buscar parciales y evaluaciones correspondientes a esta materia
-    const matchParciales = parciales.filter((p) => {
-      const normP = normalizeStr(cleanAcademicText(p.asignatura));
-      return normP.includes(normName) || normName.includes(normP);
-    });
+    // Filtrar parciales al periodo más reciente de esta asignatura
+    const { items: matchParciales, latestPeriod } = getLatestPeriodParciales(
+      parciales,
+      normName,
+    );
 
-    // Extraer Primer Parcial
+    // Primer Parcial real (0-100 o null si aún no tiene nota)
     const p1Eval = matchParciales.find((p) =>
       cleanAcademicText(p.tipo_examen).toLowerCase().includes("primer parcial"),
     );
-    let rawP1 =
+    const p1: number | null =
       p1Eval && p1Eval.puntaje !== null && p1Eval.puntaje !== undefined
-        ? p1Eval.puntaje
+        ? +Number(p1Eval.puntaje).toFixed(1)
         : null;
 
-    // Extraer Trabajo Práctico / Taller / Laboratorio
-    const labEval = matchParciales.find((p) => {
+    // Segundo Parcial real (0-100 o null si aún no tiene nota)
+    const p2Eval = matchParciales.find((p) =>
+      cleanAcademicText(p.tipo_examen).toLowerCase().includes("segundo parcial"),
+    );
+    const p2: number | null =
+      p2Eval && p2Eval.puntaje !== null && p2Eval.puntaje !== undefined
+        ? +Number(p2Eval.puntaje).toFixed(1)
+        : null;
+
+    // Trabajo Práctico / Taller / Laboratorio / Proyecto real
+    const labEvals = matchParciales.filter((p) => {
       const t = cleanAcademicText(p.tipo_examen).toLowerCase();
       return (
         t.includes("laboratorio") ||
@@ -100,46 +155,18 @@ export function buildSimulatorSubjects(
         t.includes("proyecto")
       );
     });
-    let rawLab =
-      labEval && labEval.puntaje !== null && labEval.puntaje !== undefined
-        ? labEval.puntaje
-        : null;
-
-    // Normalizar a la escala del proceso FIUNA: P1 sobre 20, P2 sobre 20, Lab sobre 10 (Total 50 pts)
-    let p1 = 12.0;
-    if (rawP1 !== null) {
-      if (rawP1 > 50) {
-        // Escala de 100 pts -> normalizar a 20 pts
-        p1 = +((rawP1 / 100) * 20).toFixed(1);
-      } else if (rawP1 > 20) {
-        // Escala de 40 o 50 pts -> normalizar a 20 pts
-        p1 = +((rawP1 / 40) * 20).toFixed(1);
-      } else {
-        p1 = +rawP1.toFixed(1);
-      }
-    }
-
-    let lab = 8.5;
-    if (rawLab !== null) {
-      if (rawLab > 20) {
-        lab = +((rawLab / 50) * 10).toFixed(1);
-      } else if (rawLab > 10) {
-        lab = +((rawLab / 20) * 10).toFixed(1);
-      } else {
-        lab = +rawLab.toFixed(1);
-      }
-    }
-
-    // Asegurar límites reglamentarios
-    p1 = Math.max(0, Math.min(20, p1));
-    lab = Math.max(0, Math.min(10, lab));
-
-    // Determinar meta de P2 por defecto (para asegurar proceso >= 30 pts)
-    const neededFor30 = Math.max(0, 30 - (p1 + lab));
-    const defaultP2 = Math.min(
-      20,
-      Math.max(8, Math.round(neededFor30 > 0 ? neededFor30 : 14)),
+    const labEvalWithScore = labEvals.find(
+      (p) => p.puntaje !== null && p.puntaje !== undefined,
     );
+    const labEval = labEvalWithScore ?? labEvals[0];
+    const hasLab = Boolean(labEval);
+    const lab: number | null =
+      labEval && labEval.puntaje !== null && labEval.puntaje !== undefined
+        ? +Number(labEval.puntaje).toFixed(1)
+        : null;
+    const labLabel = labEval ? cleanAcademicText(labEval.tipo_examen) : undefined;
+
+    const defaultP2 = p2 !== null ? Math.round(p2) : 60;
 
     const slug = cleanName
       .toLowerCase()
@@ -151,15 +178,21 @@ export function buildSimulatorSubjects(
     const semStr = ins.semestre ? `Sem. ${ins.semestre}` : "Activa";
     const criticalTopic = getCriticalTopic(cleanName);
 
-    // Heurística de insight histórico personalizada
+    // Guía cualitativa basada en escala 0-100 sin porcentajes ficticios ni cálculo forzoso 50/50
     let historicalInsight = "";
-    if (p1 >= 15) {
-      historicalInsight = `Excelente base en P1 (${p1}/20). 92% de los alumnos con este rendimiento firman la asignatura y acceden a Nota 4 o 5 en el examen final.`;
-    } else if (p1 >= 10) {
-      historicalInsight = `Rendimiento regular en P1 (${p1}/20). Requiere alcanzar ≥${defaultP2} pts en P2 para asegurar la habilitación sin depender del recuperatorio.`;
+    if (p1 === null) {
+      historicalInsight =
+        "Aún no se registra calificación de 1er Parcial en InsWeb para esta materia.";
+    } else if (p1 >= 60) {
+      historicalInsight = `Buen arranque en P1 (${p1}/100). Manteniendo un rendimiento ≥60/100 en las siguientes evaluaciones consolidarás la habilitación.`;
+    } else if (p1 >= 35) {
+      historicalInsight = `Rendimiento competitivo en P1 (${p1}/100). El modelo temporal permite proyectar el impacto de tu desempeño en el 2do Parcial.`;
     } else {
-      historicalInsight = `Alerta preventiva en P1 (${p1}/20). El enfoque intensivo en ${criticalTopic} aumenta en un 68% la probabilidad de habilitación directa en P2.`;
+      historicalInsight = `Alerta temprana por P1 bajo (${p1}/100). Prioriza el refuerzo en ${criticalTopic} para revertir la tendencia en el 2do Parcial.`;
     }
+
+    // Media histórica real de Primer.Par en el dataset de Estática (escala 0-100: 36.97)
+    const p1HistoricalMean = 37.0;
 
     return {
       id: `${slug}-${index + 1}`,
@@ -167,17 +200,23 @@ export function buildSimulatorSubjects(
       catedra: `Cátedra FIUNA (${semStr})`,
       professor: `Cátedra Oficial (${ins.carrera ? ins.carrera.split(" ")[0] : "Ingeniería"})`,
       p1,
-      p1Max: 20,
-      p1Date: p1Eval?.periodo ? `Periodo ${p1Eval.periodo}` : "Ciclo 2026",
-      p1ClassAverage: +Math.max(
-        8,
-        Math.min(16, p1 - 1.5 + Math.random() * 3),
-      ).toFixed(1),
+      p1Max: 100,
+      p1Date: p1Eval?.periodo
+        ? `Periodo ${p1Eval.periodo}`
+        : latestPeriod
+          ? `Periodo ${latestPeriod}`
+          : "Ciclo 2026",
+      p1ClassAverage: p1HistoricalMean,
+      p2,
+      p2Max: 100,
+      hasLab,
       lab,
-      labMax: 10,
-      labSessionsEvaluated: 4,
-      labPendingDeliveries: 0,
+      labMax: 100,
+      labLabel,
+      labSessionsEvaluated: hasLab ? labEvals.length : 0,
+      labPendingDeliveries: hasLab && lab === null ? 1 : 0,
       defaultP2,
+      hasOfficialWeights: false,
       attendanceRate: 88.0,
       attendedSessions: 28,
       totalSessions: 32,
@@ -190,7 +229,7 @@ export function buildSimulatorSubjects(
   const primarySubject = subjects[0]?.name || "esta materia";
 
   const quickPrompts: string[] = [
-    `Predecir si apruebo ${primarySubject} con los 3 modelos de IA`,
+    `Predecir si apruebo ${primarySubject} con los 5 modelos de IA (clásicos y temporales LSTM)`,
     `¿Cuál es mi situación para firmar ${primarySubject}?`,
     `¿Cuánto necesito en el 2do Parcial para habilitar con buen margen?`,
     `Plan de estudio intensivo para el examen de ${primarySubject}`,

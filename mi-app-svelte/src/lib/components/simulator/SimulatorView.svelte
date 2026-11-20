@@ -4,6 +4,12 @@
 	import { authState } from '../../auth-state.svelte';
 	import { getEstudiante, type EstudianteSummary } from '../../services/scraper';
 	import { buildSimulatorSubjects, type SimulatorData } from '../../services/simulator-data';
+	import {
+		getAvailableMLModels,
+		getMLPrediction,
+		getMLSequentialPrediction
+	} from '../../services/gemini';
+	import type { MLPredictResponse, MLSequentialPredictResponse } from '../../services/types';
 	import type { SubjectSimulation } from '../../types/simulator';
 	import PredictiveHeader from './PredictiveHeader.svelte';
 	import GaugeChart from './GaugeChart.svelte';
@@ -13,6 +19,16 @@
 
 	let isLoading = $state(false);
 	let studentData = $state<EstudianteSummary | null>(null);
+
+	// Estado del motor ML / Deep Learning real del backend
+	let bestAuc = $state<number | null>(null);
+	let sampleCount = $state<number | null>(null);
+	let activeModelsCount = $state<number | null>(null);
+	let mlPrediction = $state<MLPredictResponse | null>(null);
+	let mlSequential = $state<MLSequentialPredictResponse | null>(null);
+	let mlLoading = $state(false);
+	let mlOnline = $state(false);
+	let mlRequestSeq = 0;
 
 	const user = $derived(authState.user);
 
@@ -33,16 +49,33 @@
 		}
 	}
 
+	async function loadModelCatalog(): Promise<void> {
+		try {
+			const catalog = await getAvailableMLModels();
+			activeModelsCount = catalog.modelos_activos.length;
+			sampleCount = catalog.primer_parcial?.[0]?.total_muestras ?? null;
+			bestAuc =
+				catalog.series_temporales?.ensamble_clasico?.[0]?.metricas?.hito_3_proceso_completo
+					?.auc_roc ??
+				catalog.primer_parcial?.[0]?.metricas?.random_forest?.auc_roc ??
+				null;
+			mlOnline = true;
+		} catch {
+			mlOnline = false;
+		}
+	}
+
 	onMount(() => {
 		academicState.activeNav = 'agente-ia-pronosticos';
+		void loadModelCatalog();
 		if (user?.cedula) {
-			loadStudentData();
+			void loadStudentData();
 		}
 	});
 
 	$effect(() => {
 		if (user?.cedula) {
-			loadStudentData();
+			void loadStudentData();
 		} else {
 			studentData = null;
 		}
@@ -51,15 +84,18 @@
 	let simData: SimulatorData = $derived(buildSimulatorSubjects(studentData, user));
 
 	let selectedSubjectId = $state<string>('');
-	let p2Value = $state<number>(14);
+	let p2Value = $state<number>(60);
+	let includeP2Projection = $state<boolean>(false);
 
 	// Mantener sincronizada la materia seleccionada cuando cambien los datos o se carguen las materias reales
 	$effect(() => {
 		if (simData.subjects.length > 0) {
 			const found = simData.subjects.find((s) => s.id === selectedSubjectId);
 			if (!found) {
-				selectedSubjectId = simData.subjects[0].id;
-				p2Value = simData.subjects[0].defaultP2;
+				const first = simData.subjects[0];
+				selectedSubjectId = first.id;
+				p2Value = first.defaultP2;
+				includeP2Projection = first.hasOfficialWeights || first.p2 !== null;
 			}
 		}
 	});
@@ -68,31 +104,125 @@
 		simData.subjects.find((s) => s.id === selectedSubjectId) ?? simData.subjects[0]
 	);
 
+	// Llamada reactiva con debounce de 250ms al motor real (completo 5 modelos o secuencial por hito)
+	$effect(() => {
+		const subj = currentSubject;
+		const p2Proj = includeP2Projection;
+		const p2Val = p2Value;
+
+		if (subj.p1 === null) {
+			++mlRequestSeq;
+			mlPrediction = null;
+			mlSequential = null;
+			mlLoading = false;
+			return;
+		}
+
+		const p1_100 =
+			subj.p1Max === 100
+				? subj.p1
+				: Math.max(0, Math.min(100, Math.round((subj.p1 / subj.p1Max) * 100)));
+
+		const lab_100: number | null =
+			subj.hasLab && subj.lab !== null
+				? subj.labMax === 100
+					? subj.lab
+					: Math.max(0, Math.min(100, Math.round((subj.lab / subj.labMax) * 100)))
+				: null;
+
+		const hasP2 = p2Proj || subj.p2 !== null || subj.hasOfficialWeights;
+		const rawP2 = subj.p2 !== null && !p2Proj ? subj.p2 : p2Val;
+		const p2_100: number | null = hasP2
+			? subj.p2Max === 100
+				? rawP2
+				: Math.max(0, Math.min(100, Math.round((rawP2 / subj.p2Max) * 100)))
+			: null;
+
+		const seq = ++mlRequestSeq;
+		const timer = setTimeout(async () => {
+			mlLoading = true;
+			try {
+				if (lab_100 !== null && p2_100 !== null) {
+					const res = await getMLPrediction(subj.name, p1_100, p2_100, lab_100);
+					if (seq === mlRequestSeq) {
+						mlPrediction = res;
+						mlSequential = null;
+						mlOnline = true;
+					}
+				} else {
+					const resSeq = await getMLSequentialPrediction(
+						subj.name,
+						p1_100,
+						lab_100,
+						p2_100
+					);
+					if (seq === mlRequestSeq) {
+						mlSequential = resSeq;
+						mlPrediction = null;
+						mlOnline = true;
+					}
+				}
+			} catch {
+				if (seq === mlRequestSeq) {
+					mlPrediction = null;
+					mlSequential = null;
+					mlOnline = false;
+				}
+			} finally {
+				if (seq === mlRequestSeq) {
+					mlLoading = false;
+				}
+			}
+		}, 250);
+
+		return () => {
+			clearTimeout(timer);
+		};
+	});
+
 	function handleSubjectChange(newId: string) {
 		selectedSubjectId = newId;
 		const found = simData.subjects.find((s) => s.id === newId);
 		if (found) {
 			p2Value = found.defaultP2;
+			includeP2Projection = found.hasOfficialWeights || found.p2 !== null;
 		}
 	}
 
 	function handleSetP2(val: number) {
 		p2Value = val;
+		includeP2Projection = true;
 	}
 
-	// Cálculos predictivos derivados en tiempo real
-	let totalProcess = $derived(currentSubject.p1 + p2Value + currentSubject.lab);
+	function handleToggleP2Projection(enabled: boolean) {
+		includeP2Projection = enabled;
+	}
 
-	let probability = $derived(
-		Math.max(10, Math.min(96, Math.round(15 + (totalProcess / 50) * 82)))
+	// Solo calcular suma de proceso sobre 50 si la materia usa pesos oficiales 50/50
+	let totalProcess = $derived(
+		currentSubject.hasOfficialWeights &&
+			currentSubject.p1 !== null &&
+			currentSubject.lab !== null
+			? currentSubject.p1 + p2Value + currentSubject.lab
+			: null
 	);
+
+	let probability = $derived.by(() => {
+		if (currentSubject.p1 === null) return null;
+		if (mlPrediction) return Math.round(mlPrediction.resumen.probabilidad_promedio);
+		if (mlSequential) return Math.round(mlSequential.probabilidad_aprobacion);
+		if (totalProcess !== null) {
+			return Math.max(10, Math.min(96, Math.round(15 + (totalProcess / 50) * 82)));
+		}
+		return null;
+	});
 </script>
 
 <svelte:head>
 	<title>Simulador Predictivo &amp; Agente IA - FIUNA Academic AI Suite</title>
 </svelte:head>
 
-<div class="flex flex-col w-full gap-space-lg">
+<div class="flex flex-col w-full gap-space-lg pb-20 sm:pb-24">
 	<!-- Banner Informativo del Estado de la Base de Datos -->
 	{#if isLoading}
 		<div
@@ -134,8 +264,8 @@
 			</div>
 
 			<span class="px-3 py-1 rounded-full bg-surface-container text-xs font-semibold text-secondary flex items-center gap-1 self-start sm:self-auto">
-				<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-				Gemini 3.5 Flash-Lite + SQLite
+				<span class="w-2 h-2 rounded-full {mlOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}"></span>
+				Gemini + 5 Modelos ML/LSTM
 			</span>
 		</div>
 	{:else}
@@ -172,36 +302,50 @@
 		subjects={simData.subjects}
 		{selectedSubjectId}
 		onSubjectChange={handleSubjectChange}
+		{bestAuc}
+		{sampleCount}
+		{activeModelsCount}
+		isBackendLive={mlOnline}
 	/>
 
-	<!-- Primary Workspace: 2-Column Split Layout -->
-	<div class="grid grid-cols-12 gap-space-lg items-start">
-		<!-- LEFT COLUMN: Predictive Engine & Matrix (60% ~ 7 cols desktop) -->
-		<div class="col-span-12 xl:col-span-7 flex flex-col gap-space-lg">
-			<!-- Top Live Gauge & Mathematical Probability -->
-			<GaugeChart {probability} {totalProcess} />
-
-			<!-- Parametric Evaluation Matrix & Slider -->
-			<EvaluationMatrix
-				subject={currentSubject}
-				{p2Value}
-				onP2Change={handleSetP2}
-			/>
-
-			<!-- Simulated Final Exam Scenarios (1 al 5) -->
-			<FinalExamScenarios
-				subject={currentSubject}
-				{totalProcess}
-				{p2Value}
-			/>
-		</div>
-
-		<!-- RIGHT COLUMN: AI Copilot Academic Conversational Agent (40% ~ 5 cols desktop) -->
-		<AiCopilotChat
+	<!-- Primary Workspace: Paneles Predictivos en Ancho Completo -->
+	<div class="flex flex-col gap-space-lg">
+		<!-- Top Live Gauge & Real ML+LSTM Consensus -->
+		<GaugeChart
+			{probability}
+			{totalProcess}
 			subject={currentSubject}
-			quickPrompts={simData.quickPrompts}
-			onSetP2={handleSetP2}
-			onSwitchSubject={handleSubjectChange}
+			{p2Value}
+			{includeP2Projection}
+			{mlPrediction}
+			{mlSequential}
+			{mlLoading}
+		/>
+
+		<!-- Parametric Evaluation Matrix & Slider -->
+		<EvaluationMatrix
+			subject={currentSubject}
+			{p2Value}
+			{includeP2Projection}
+			onP2Change={handleSetP2}
+			onToggleP2Projection={handleToggleP2Projection}
+		/>
+
+		<!-- Simulated Final Exam Scenarios / Diagnóstico Secuencial -->
+		<FinalExamScenarios
+			subject={currentSubject}
+			{totalProcess}
+			{p2Value}
+			{mlPrediction}
+			{mlSequential}
 		/>
 	</div>
+
+	<!-- Burbuja Flotante del Copiloto Académico IA -->
+	<AiCopilotChat
+		subject={currentSubject}
+		quickPrompts={simData.quickPrompts}
+		onSetP2={handleSetP2}
+		onSwitchSubject={handleSubjectChange}
+	/>
 </div>

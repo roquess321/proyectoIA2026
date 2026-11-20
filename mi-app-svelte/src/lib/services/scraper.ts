@@ -46,6 +46,91 @@ export interface EstudianteSummary {
   notas: NotaFinalData[];
 }
 
+export type ScraperStepId =
+  | "handshake"
+  | "inscripciones"
+  | "calificaciones"
+  | "persistencia";
+
+export type ScraperStepStatus = "idle" | "running" | "done" | "error";
+
+export interface ScraperStatusData {
+  api_online: boolean;
+  playwright_ready: boolean;
+  insweb_url: string;
+  insweb_reachable: boolean | null;
+  insweb_latency_ms: number | null;
+  insweb_status_code: number | null;
+  sqlite_ready: boolean;
+  estudiantes_count: number;
+  active_jobs: number;
+  student_synced: boolean | null;
+  student_last_sync: string | null;
+  student_inscripciones_count: number | null;
+  student_parciales_count: number | null;
+  student_notas_count: number | null;
+}
+
+export interface ScraperStreamProgressEvent {
+  type: "progress";
+  step: ScraperStepId;
+  step_status: Exclude<ScraperStepStatus, "idle">;
+  progress: number;
+  message: string;
+  meta?: Record<string, string | number | boolean | null>;
+}
+
+export interface ScraperStreamCompleteEvent {
+  type: "complete";
+  ok: true;
+  cedula: string;
+  message: string;
+  inscripciones_count: number;
+  parciales_count: number;
+  notas_count: number;
+  progress: number;
+}
+
+export interface ScraperStreamErrorEvent {
+  type: "error";
+  ok: false;
+  detail: string;
+  step?: ScraperStepId;
+  step_status?: "error";
+}
+
+export type ScraperStreamEvent =
+  | ScraperStreamProgressEvent
+  | ScraperStreamCompleteEvent
+  | ScraperStreamErrorEvent;
+
+/**
+ * Consulta la telemetría real del motor de scraping, conectividad a INSWEB y estado de SQLite.
+ */
+export async function getScraperStatus(
+  cedula?: string | null,
+  checkInsweb = true,
+): Promise<ScraperStatusData> {
+  const params = new URLSearchParams();
+  params.set("check_insweb", checkInsweb ? "true" : "false");
+  if (cedula && cedula.trim()) {
+    params.set("cedula", cedula.trim());
+  }
+
+  const res = await fetch(`${API_BASE}/api/scraper/status?${params.toString()}`);
+  if (!res.ok) {
+    const errData = (await res
+      .json()
+      .catch(() => ({ detail: "No se pudo consultar el estado del scraper." }))) as {
+      detail?: string;
+    };
+    throw new Error(
+      errData.detail || `Error al consultar estado del scraper (${res.status})`,
+    );
+  }
+  return (await res.json()) as ScraperStatusData;
+}
+
 /**
  * Invoca al backend FastAPI para iniciar la extracción en vivo desde INSWEB con Playwright en modo silencioso.
  */

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Callable, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
 try:
@@ -93,16 +93,54 @@ def ejecutar_pipeline_estudiante(
     cedula: str,
     pin: str,
     db: Session,
+    on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     """Orquesta la extracción (Playwright), sanitización y persistencia (SQLAlchemy) de un estudiante."""
+    def emit_safe(payload: Dict[str, Any]) -> None:
+        if on_progress is None:
+            return
+        try:
+            on_progress(payload)
+        except Exception:
+            pass
+
     bot = INSWEBScraper()
-    datos_crudos = bot.ejecutar_flujo_completo(cedula=cedula, pin=pin)
+    datos_crudos = bot.ejecutar_flujo_completo(
+        cedula=cedula,
+        pin=pin,
+        on_progress=on_progress,
+    )
 
     if not datos_crudos:
         raise ValueError("No se pudieron extraer datos de INSWEB. Verifica las credenciales.")
 
+    emit_safe(
+        {
+            "type": "progress",
+            "step": "persistencia",
+            "step_status": "running",
+            "progress": 93,
+            "message": "💾 [Pipeline] Sanitizando registros y actualizando tablas SQLite (copilot.db)...",
+            "meta": {},
+        }
+    )
+
     datos_limpios = sanitizar_datos_estudiante(datos_crudos)
     conteos = persistir_datos_estudiante(cedula=cedula, datos_limpios=datos_limpios, db=db)
+
+    emit_safe(
+        {
+            "type": "progress",
+            "step": "persistencia",
+            "step_status": "done",
+            "progress": 100,
+            "message": (
+                f"✅ [Pipeline] SQLite actualizado: {conteos['inscripciones']} inscripciones, "
+                f"{conteos['parciales']} parciales, {conteos['notas']} actas."
+            ),
+            "meta": conteos,
+        }
+    )
 
     return {
         "ok": True,

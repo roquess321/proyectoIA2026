@@ -1,70 +1,128 @@
-# 🎓 Sistema Inteligente de Acompañamiento Académico - FIUNA
+# 🎓 Copiloto Académico FIUNA — Plataforma Inteligente de Acompañamiento y Predicción
 
-Plataforma académica interactiva desarrollada para la Facultad de Ingeniería de la Universidad Nacional de Asunción (**FIUNA**). Integra un **Dashboard de Malla Curricular**, un **Simulador Predictivo de Calificaciones** y un **Agente Académico Inteligente con memoria y persistencia**.
-
----
-
-## 🏛️ Arquitectura del Sistema
-
-El proyecto cumple estrictamente con una arquitectura cliente-servidor desacoplada y segura:
-
-1. **Frontend (Svelte 5 & TypeScript):**
-   - Construido con la última versión de Svelte 5 (sintaxis de Runes: `$state`, `$derived`, `$props`).
-   - Interfaz moderna, reactiva y tipado estricto.
-   - Consume la API propia del backend; **no expone claves privadas en el navegador**.
-
-2. **Backend Orquestador (FastAPI & Python):**
-   - Servidor intermedio que actúa como orquestador del agente de IA.
-   - Gestiona la memoria contextual de las conversaciones.
-   - Resguarda la API Key institucional de forma 100% segura.
-   - Documentación OpenAPI/Swagger autogenerada en `/docs`.
-
-3. **Capa de Persistencia (SQLite & SQLAlchemy):**
-   - Almacena sesiones e historiales de conversación en una base de datos local SQLite (`backend/copilot.db`).
-   - No requiere servicios ni contenedores externos para facilitar la evaluación.
-
-4. **Proveedor LLM:**
-   - Integrado con **Google Gemini** (`gemini-3.8-flash`) mediante llamadas REST asíncronas optimizadas.
+Plataforma web interactiva desarrollada para estudiantes de la Facultad de Ingeniería de la Universidad Nacional de Asunción (**FIUNA**). Combina un portal de gestión académica, visualización de historial curricular, un simulador de notas, un **Agente Conversacional con Google Gemini** y **5 modelos de Machine Learning y Deep Learning** (clásicos y de series temporales) para estimar probabilidades de aprobación.
 
 ---
 
-## 🚀 Guía de Inicio Rápido
+## 🧠 Análisis de Arquitectura y Estado Actual del Proyecto
 
-### 1. Clonar el repositorio y configurar variables de entorno
-Crea tu archivo de variables de entorno a partir de la plantilla:
+El sistema sigue una arquitectura **cliente-servidor desacoplada** para garantizar seguridad, persistencia local y facilidad de despliegue sin servicios externos pesados:
+
+### 1. Frontend (`mi-app-svelte/`)
+- **Tecnologías:** Svelte 5 (Runes `$state`, `$derived`, `$props`), SvelteKit, TypeScript estricto y Tailwind CSS.
+- **Vistas implementadas (`src/routes/`):**
+  - `/` — **Portal de Acceso & Vinculación InsWeb:** Registro e inicio de sesión local (PBKDF2-HMAC-SHA256), acceso en modo invitado, vinculación con INSWEB y monitor de scraping.
+  - `/dashboard` — **Dashboard Académico:** Resumen de promedio general (PPG), materias en curso, evaluaciones recientes y métricas de rendimiento.
+  - `/agente-ia-pronosticos` — **Simulador Predictivo & Copiloto IA:** Simulador paramétrico de parciales, escenarios de examen final y chat conectado al agente LLM.
+  - `/historial-malla-curricular` — **Historial Académico y Malla Curricular:** Visualización de asignaturas aprobadas, notas finales y actas sincronizadas.
+- **Seguridad:** No expone claves de API de IA en el navegador; todas las consultas pasan por el backend FastAPI.
+
+### 2. Backend Orquestador (`backend/`)
+- **Tecnologías:** FastAPI, Uvicorn, SQLAlchemy, Pydantic v2 y Python 3.14.
+- **Persistencia (`copilot.db`):** Base de datos SQLite local administrada con SQLAlchemy (`ChatSession`, `ChatMessage`, `Estudiante`, `Inscripcion`, `Parcial`, `NotaFinal`, `UsuarioLocal`).
+- **Seguridad (`backend/services/security.py`):** Contraseñas hasheadas localmente con `PBKDF2-HMAC-SHA256` y *salt* aleatorio.
+- **Scraper Institucional (`backend/services/scraper/`):** Automatización con Playwright en modo *headless* para extraer inscripciones, parciales y notas finales desde INSWEB, sanitizarlas (`cleaner.py`) y guardarlas en SQLite (`pipeline.py`).
+- **Agente LLM con Function Calling (`backend/services/llm.py`):** Integrado con Google Gemini (`gemini-3.5-flash-lite`) usando memoria conversacional persistente e invocación automática de herramientas locales de predicción.
+
+### 3. Motor de Inteligencia Artificial (`backend/services/ml/`)
+Los modelos ya se encuentran **entrenados y serializados** en `backend/services/ml/saved_models/` (listos para usarse sin necesidad de re-entrenar al iniciar):
+
+| Paradigma | Modelo | Uso Principal | Ubicación |
+| :--- | :--- | :--- | :--- |
+| **ML Clásico (Tabulares)** | 1. Regresión Logística (+ StandardScaler)<br>2. Árbol de Decisión<br>3. Random Forest (200 árboles) | Predicción cuando se cuenta con las notas de proceso (`Primer.Par`, `Segundo.Par`, `TPLab.`). | `predictor.py` |
+| **Serie Temporal Clásica** | 4. Ensamble Temporal Multi-Hito (*Gradient Boosting*) | Predicción progresiva en cualquier etapa del semestre (solo 1er Parcial, 1er Parcial + TP, o proceso completo). | `sequential_tracker.py` |
+| **Deep Learning Secuencial** | 5. Red Neuronal Recurrente **LSTM** (PyTorch, 2 capas) | Modela secuencias de longitud variable, inercia académica y tendencias continuas con ponderación de desbalance (`pos_weight`). | `lstm_tracker.py` |
+
+---
+
+## 📋 Requisitos Previos (Instalación por única vez)
+
+Antes de empezar, asegúrate de tener instalados estos **3 programas gratuitos** en tu computadora:
+
+1. **Python 3.14 o superior:**  
+   Descarga desde [python.org/downloads](https://www.python.org/downloads/).  
+   *(En Windows, marca la casilla **"Add python.exe to PATH"** durante la instalación).*
+2. **Node.js (versión LTS recomendada, 20 o superior):**  
+   Descarga desde [nodejs.org](https://nodejs.org/) (incluye `npm` automáticamente).
+3. **uv (Gestor rápido de paquetes Python):**  
+   Abre una terminal y ejecuta el comando según tu sistema:
+   - **Windows (PowerShell):**
+     ```powershell
+     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+     ```
+   - **macOS / Linux:**
+     ```bash
+     curl -LsSf https://astral.sh/uv/install.sh | sh
+     ```
+   *(Luego cierra y vuelve a abrir tu terminal para que reconozca el comando `uv`).*
+
+---
+
+## 🚀 Guía Paso a Paso para Levantar el Proyecto Localmente
+
+### Paso 1: Descargar el proyecto
+Si aún no lo tienes en tu PC, clona el repositorio y entra en la carpeta:
 
 ```bash
-# Copiar plantilla en el backend
-copy backend\.env.example backend\.env
+git clone https://github.com/roquess321/proyectoIA2026.git
+cd proyectoIA2026
 ```
-
-Edita `backend/.env` y añade tu clave de API gratuita de Google Gemini:
-```env
-GEMINI_API_KEY=tu_clave_gemini_aqui
-DATABASE_URL=sqlite:///./copilot.db
-```
+*(Si ya descargaste el archivo ZIP, descomprímelo y abre tu terminal dentro de la carpeta principal del proyecto).*
 
 ---
 
-### 2. Iniciar el Backend (FastAPI)
-Desde la raíz del proyecto (`prouebaSvelte/`), ejecuta:
+### Paso 2: Configurar la clave gratuita de Google Gemini
+El asistente de chat necesita una clave gratuita de Google AI Studio.
+
+1. Ingresa a [aistudio.google.com](https://aistudio.google.com/), inicia sesión con tu cuenta de Google y haz clic en **"Get API key" → "Create API key"**.
+2. Copia la clave generada.
+3. Crea el archivo de configuración del backend copiando la plantilla:
+   - **En Windows (PowerShell o CMD):**
+     ```powershell
+     copy backend\.env.example backend\.env
+     ```
+   - **En macOS / Linux:**
+     ```bash
+     cp backend/.env.example backend/.env
+     ```
+4. Abre el archivo `backend/.env` con el Bloc de notas o VS Code y reemplaza `TU_CLAVE_GEMINI_AQUI` por tu clave real:
+   ```env
+   GEMINI_API_KEY=AIzaSyTuClaveRealDeGeminiAqui
+   DATABASE_URL=sqlite:///./copilot.db
+   ```
+   > **Nota:** Guarda el archivo. Nunca subas tu `.env` a GitHub (ya está protegido en `.gitignore`).
+
+---
+
+### Paso 3: Instalar dependencias y encender el Backend (Terminal 1)
+
+Desde la carpeta raíz del proyecto, instala todas las librerías de Python (FastAPI, scikit-learn, PyTorch, Playwright, etc.) con un solo comando:
 
 ```bash
-# Con uv (recomendado, ultra rápido)
+uv sync
+```
+
+*(Opcional — solo si vas a usar la sincronización en vivo con el portal INSWEB)*: instala el navegador interno de Playwright ejecutando:
+```bash
+uv run playwright install chromium
+```
+
+Ahora inicia el servidor Backend:
+
+```bash
 uv run uvicorn backend.main:app --reload --port 8000
-
-# O activando el entorno virtual
-.\.venv\Scripts\activate
-uvicorn backend.main:app --reload --port 8000
 ```
 
-* **API Backend:** `http://localhost:8000`
-* **Documentación Interactiva Swagger:** `http://localhost:8000/docs`
+Si todo salió bien, verás un mensaje indicando:
+`Uvicorn running on http://127.0.0.1:8000`
+
+> **Deja esta primera terminal abierta** mientras uses la aplicación.
 
 ---
 
-### 3. Iniciar el Frontend (Svelte 5)
-En una segunda terminal:
+### Paso 4: Instalar dependencias y encender el Frontend (Terminal 2)
+
+Abre una **segunda terminal** en la carpeta raíz del proyecto y ejecuta:
 
 ```bash
 cd mi-app-svelte
@@ -72,14 +130,82 @@ npm install
 npm run dev
 ```
 
-* **Aplicación Web:** `http://localhost:5173`
+Verás en pantalla:
+`➜  Local:   http://localhost:5173/`
 
 ---
 
-## 📡 Endpoints Principales de la API
+### Paso 5: ¡Listo! Abre la aplicación en tu navegador
 
-* `GET /` — Estado de salud del servicio backend.
-* `POST /api/chat` — Envía una consulta al Agente, recupera el historial previo en SQLite, consulta al LLM y persiste la respuesta.
-* `GET /api/chat/history/{session_id}` — Devuelve el historial completo de mensajes de una conversación.
-* `GET /api/chat/sessions` — Lista todas las sesiones de chat registradas con su conteo de mensajes.
-* `DELETE /api/chat/sessions/{session_id}` — Elimina una conversación de la base de datos.
+- **Aplicación Web (Frontend):** [http://localhost:5173](http://localhost:5173)
+- **Documentación interactiva de la API (Swagger):** [http://localhost:8000/docs](http://localhost:8000/docs)
+
+#### ¿Cómo empezar a probarla?
+1. En la pantalla inicial (`/`), puedes **Crear Cuenta** local, usar **Entrar como Invitado** para probar el modo demostración al instante, o vincular tu Cédula con INSWEB si deseas traer datos reales.
+2. Navega al menú lateral hacia **Agente IA & Pronósticos** (`/agente-ia-pronosticos`) para mover los deslizadores de notas o chatear con el Copiloto (por ejemplo: *"Saqué 42 en el 1er parcial de Estática, ¿qué probabilidad tengo de aprobar?"*).
+
+---
+
+## 📁 Estructura Resumida del Repositorio
+
+```text
+proyectoIA2026/
+├── backend/
+│   ├── main.py                     # API FastAPI y definición de rutas REST
+│   ├── database.py                 # Conexión SQLite y sesiones SQLAlchemy
+│   ├── models.py                   # Tablas ORM (Chat, Estudiantes, Notas, Usuarios)
+│   ├── schemas.py                  # Validación de entradas/salidas con Pydantic
+│   ├── .env.example                # Plantilla de variables de entorno
+│   └── services/
+│       ├── llm.py                  # Cliente Gemini + Function Calling
+│       ├── security.py             # Hashing PBKDF2-HMAC-SHA256
+│       ├── scraper/                # Pipeline Playwright para INSWEB
+│       └── ml/
+│           ├── predictor.py        # Inferencia de los 5 modelos (Clásicos + Temporales)
+│           ├── sequential_tracker.py # Ensamble Temporal Multi-Hito (Gradient Boosting)
+│           ├── lstm_tracker.py     # Red Neuronal Recurrente LSTM (PyTorch)
+│           ├── trainer.py          # Entrenamiento de modelos clásicos
+│           └── saved_models/       # Pesos pre-entrenados (.joblib, .pt, .json)
+├── mi-app-svelte/
+│   ├── package.json                # Dependencias Node / SvelteKit
+│   └── src/
+│       ├── routes/                 # Páginas: /, /dashboard, /agente-ia-pronosticos, /historial-malla-curricular
+│       └── lib/                    # Componentes Svelte 5 y servicios HTTP hacia FastAPI
+├── pyproject.toml                  # Dependencias Python y configuración uv/Pyright
+├── uv.lock                         # Versiones exactas fijadas de Python
+└── README.md                       # Esta guía
+```
+
+---
+
+## 📡 Endpoints Principales de la API (`http://localhost:8000`)
+
+| Categoría | Método y Ruta | Descripción |
+| :--- | :--- | :--- |
+| **Salud** | `GET /` | Verifica que el backend está activo. |
+| **Chat IA** | `POST /api/chat` | Envía un mensaje al Copiloto Gemini con memoria SQLite y herramientas ML. |
+| **Chat IA** | `GET /api/chat/sessions` | Lista las sesiones de chat guardadas. |
+| **Chat IA** | `GET /api/chat/history/{session_id}` | Obtiene el historial de mensajes de una sesión. |
+| **Chat IA** | `DELETE /api/chat/sessions/{session_id}` | Elimina una sesión de chat. |
+| **Machine Learning** | `POST /api/ml/predict` | Evalúa los 5 modelos (Regresión Logística, Árbol, Random Forest, Ensamble Temporal y LSTM). |
+| **Machine Learning** | `POST /api/ml/predict-sequential` | Predicción temporal progresiva desde el 1er parcial (Hitos 1, 2 o 3). |
+| **Machine Learning** | `GET /api/ml/models` | Lista el catálogo de modelos entrenados disponibles. |
+| **Autenticación** | `POST /api/auth/register` | Crea una cuenta local segura. |
+| **Autenticación** | `POST /api/auth/login-local` | Inicia sesión con usuario/cédula y contraseña local. |
+| **Autenticación** | `POST /api/auth/login` | Login / sincronización con INSWEB. |
+| **Autenticación** | `POST /api/auth/link-insweb` | Vincula y sincroniza materias desde INSWEB a una cuenta local. |
+| **Estudiantes / Scraper** | `POST /api/scraper/sync` | Ejecuta el scraper de Playwright bajo demanda. |
+| **Estudiantes / Scraper** | `GET /api/estudiantes/{cedula}` | Ficha académica completa (inscripciones, parciales y notas finales). |
+| **Estudiantes / Scraper** | `GET /api/estudiantes/{cedula}/inscripciones` | Materias matriculadas del periodo. |
+| **Estudiantes / Scraper** | `GET /api/estudiantes/{cedula}/parciales` | Evaluaciones parciales registradas. |
+| **Estudiantes / Scraper** | `GET /api/estudiantes/{cedula}/notas` | Historial de notas finales. |
+
+---
+
+## 🛠️ Solución de Problemas Frecuentes
+
+- **`uv` no se reconoce como comando en Windows:** Cierra y vuelve a abrir la terminal después de instalar `uv`. Si persiste, reinicia la sesión o usa el entorno virtual directamente (`.venv\Scripts\activate` y luego `uvicorn backend.main:app --reload --port 8000`).
+- **El chat responde error 502 o dice que falta `GEMINI_API_KEY`:** Verifica que creaste el archivo `backend/.env` (no solo `.env.example`), que pegaste una clave válida sin comillas ni espacios extra, y reinicia la terminal del backend.
+- **Error de conexión con `http://localhost:8000` en el navegador:** Asegúrate de que la **Terminal 1** (FastAPI) siga abierta y corriendo sin errores.
+- **Puerto `8000` o `5173` ocupado:** Puedes iniciar el backend en otro puerto (`--port 8001`) y crear un archivo `mi-app-svelte/.env` con `VITE_API_URL=http://localhost:8001`.
+- **Error de Playwright al sincronizar INSWEB:** Ejecuta `uv run playwright install chromium` para descargar el navegador requerido por el scraper.

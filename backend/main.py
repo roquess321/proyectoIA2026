@@ -1,11 +1,19 @@
+import asyncio
+import importlib.util
+import json
 import os
 import sys
+import threading
+import time
+import traceback
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import List, Dict
+from typing import Any, Dict, List, Optional
+import httpx
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
@@ -25,7 +33,7 @@ if _env_file.exists():
 else:
     load_dotenv()
 
-from backend.database import engine, Base, get_db
+from backend.database import engine, Base, get_db, SessionLocal
 from backend.models import ChatSession, ChatMessage, Estudiante, Inscripcion, Parcial, NotaFinal, UsuarioLocal
 from backend.schemas import (
     ChatRequest,
@@ -35,6 +43,7 @@ from backend.schemas import (
     SessionSummary,
     ScraperSyncRequest,
     ScraperSyncResponse,
+    ScraperStatusResponse,
     EstudianteSummaryResponse,
     InscripcionItem,
     ParcialItem,
@@ -285,6 +294,110 @@ def delete_session(session_id: str, db: Session = Depends(get_db)):
 # -----------------------------------------------------------------------------
 # ENDPOINTS: SCRAPER E INGESTA ACADÉMICA INSWEB
 # -----------------------------------------------------------------------------
+_scraper_jobs_lock = threading.Lock()
+_active_scraper_jobs = 0
+
+
+def _inc_scraper_jobs() -> None:
+    global _active_scraper_jobs
+    with _scraper_jobs_lock:
+        _active_scraper_jobs += 1
+
+
+def _dec_scraper_jobs() -> None:
+    global _active_scraper_jobs
+    with _scraper_jobs_lock:
+        _active_scraper_jobs = max(0, _active_scraper_jobs - 1)
+
+
+def _get_active_scraper_jobs() -> int:
+    with _scraper_jobs_lock:
+        return _active_scraper_jobs
+
+
+@app.get("/api/scraper/status", response_model=ScraperStatusResponse, tags=["Scraper INSWEB"])
+async def scraper_status(
+    cedula: Optional[str] = None,
+    check_insweb: bool = True,
+    db: Session = Depends(get_db),
+):
+    """Retorna telemetría real del motor Playwright, conectividad a INSWEB y estado de SQLite."""
+    insweb_url = "https://insweb.ing.una.py/login"
+    playwright_ready = importlib.util.find_spec("playwright") is not None
+
+    sqlite_ready = True
+    estudiantes_count = 0
+    student_synced: Optional[bool] = None
+    student_last_sync = None
+    student_inscripciones_count: Optional[int] = None
+    student_parciales_count: Optional[int] = None
+    student_notas_count: Optional[int] = None
+
+    try:
+        estudiantes_count = db.query(Estudiante).count()
+        if cedula:
+            clean_ci = cedula.strip().replace(".", "")
+            estudiante = db.query(Estudiante).filter(Estudiante.cedula == clean_ci).first()
+            if estudiante:
+                student_last_sync = estudiante.fecha_actualizacion
+                student_inscripciones_count = (
+                    db.query(Inscripcion).filter(Inscripcion.cedula == clean_ci).count()
+                )
+                student_parciales_count = (
+                    db.query(Parcial).filter(Parcial.cedula == clean_ci).count()
+                )
+                student_notas_count = (
+                    db.query(NotaFinal).filter(NotaFinal.cedula == clean_ci).count()
+                )
+                student_synced = estudiante.fecha_actualizacion is not None or (
+                    (student_inscripciones_count or 0)
+                    + (student_parciales_count or 0)
+                    + (student_notas_count or 0)
+                    > 0
+                )
+            else:
+                student_synced = False
+                student_inscripciones_count = 0
+                student_parciales_count = 0
+                student_notas_count = 0
+    except Exception:
+        sqlite_ready = False
+
+    insweb_reachable: Optional[bool] = None
+    insweb_latency_ms: Optional[int] = None
+    insweb_status_code: Optional[int] = None
+
+    if check_insweb:
+        t0 = time.perf_counter()
+        try:
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                resp = await client.get(insweb_url)
+                insweb_latency_ms = round((time.perf_counter() - t0) * 1000)
+                insweb_status_code = resp.status_code
+                insweb_reachable = resp.status_code < 500
+        except Exception:
+            insweb_reachable = False
+            insweb_latency_ms = None
+            insweb_status_code = None
+
+    return ScraperStatusResponse(
+        api_online=True,
+        playwright_ready=playwright_ready,
+        insweb_url=insweb_url,
+        insweb_reachable=insweb_reachable,
+        insweb_latency_ms=insweb_latency_ms,
+        insweb_status_code=insweb_status_code,
+        sqlite_ready=sqlite_ready,
+        estudiantes_count=estudiantes_count,
+        active_jobs=_get_active_scraper_jobs(),
+        student_synced=student_synced,
+        student_last_sync=student_last_sync,
+        student_inscripciones_count=student_inscripciones_count,
+        student_parciales_count=student_parciales_count,
+        student_notas_count=student_notas_count,
+    )
+
+
 @app.post("/api/scraper/sync", response_model=ScraperSyncResponse, tags=["Scraper INSWEB"])
 def sync_insweb(request: ScraperSyncRequest, db: Session = Depends(get_db)):
     """
@@ -292,6 +405,7 @@ def sync_insweb(request: ScraperSyncRequest, db: Session = Depends(get_db)):
     Extrae: inscripciones actuales, notas finales y parciales por periodo.
     """
     clean_ci = request.cedula.strip().replace(".", "")
+    _inc_scraper_jobs()
     try:
         res = ejecutar_pipeline_estudiante(
             cedula=clean_ci,
@@ -307,11 +421,21 @@ def sync_insweb(request: ScraperSyncRequest, db: Session = Depends(get_db)):
             parciales_count=conteos["parciales"],
             notas_count=conteos["notas"],
         )
+    except ValueError as e:
+        print(f"❌ [Scraper] Error de credenciales en /api/scraper/sync: {e}", flush=True)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
     except Exception as e:
+        print(f"❌ [Scraper] Error en /api/scraper/sync: {e}", flush=True)
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fallo en la sincronización con INSWEB: {str(e)}",
         )
+    finally:
+        _dec_scraper_jobs()
 
 
 @app.get("/api/estudiantes/{cedula}", response_model=EstudianteSummaryResponse, tags=["Estudiantes"])
@@ -496,6 +620,7 @@ def login_local(request: UserLoginRequest, db: Session = Depends(get_db)):
 def link_insweb(request: LinkInswebRequest, db: Session = Depends(get_db)):
     """Ejecuta el scraper silencioso y asocia las materias/notas a la cédula de la cuenta."""
     clean_ci = request.cedula.strip().replace(".", "")
+    _inc_scraper_jobs()
     try:
         resultado = ejecutar_pipeline_estudiante(cedula=clean_ci, pin=request.pin, db=db)
         conteos = resultado["conteo"]
@@ -507,11 +632,105 @@ def link_insweb(request: LinkInswebRequest, db: Session = Depends(get_db)):
             parciales_count=conteos["parciales"],
             notas_count=conteos["notas"],
         )
+    except ValueError as e:
+        print(f"❌ [Scraper] Error de credenciales en /api/auth/link-insweb: {e}", flush=True)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+        )
     except Exception as e:
+        print(f"❌ [Scraper] Error en /api/auth/link-insweb: {e}", flush=True)
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fallo al sincronizar con INSWEB: {str(e)}",
         )
+    finally:
+        _dec_scraper_jobs()
+
+
+@app.post("/api/auth/link-insweb/stream", tags=["Autenticación Local"])
+async def link_insweb_stream(request: LinkInswebRequest):
+    """Ejecuta el scraper silencioso transmitiendo telemetría en vivo vía Server-Sent Events (SSE)."""
+    clean_ci = request.cedula.strip().replace(".", "")
+    pin = request.pin
+
+    async def event_generator():
+        queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        state_ref: Dict[str, str] = {"last_step": "handshake"}
+
+        def push(ev: Optional[Dict[str, Any]]) -> None:
+            if isinstance(ev, dict) and isinstance(ev.get("step"), str):
+                state_ref["last_step"] = ev["step"]
+            loop.call_soon_threadsafe(queue.put_nowait, ev)
+
+        def worker() -> None:
+            _inc_scraper_jobs()
+            thread_db = SessionLocal()
+            try:
+                resultado = ejecutar_pipeline_estudiante(
+                    cedula=clean_ci,
+                    pin=pin,
+                    db=thread_db,
+                    on_progress=push,
+                )
+                conteos = resultado["conteo"]
+                push(
+                    {
+                        "type": "complete",
+                        "ok": True,
+                        "cedula": clean_ci,
+                        "message": f"Datos académicos sincronizados correctamente para C.I. {clean_ci}.",
+                        "inscripciones_count": conteos["inscripciones"],
+                        "parciales_count": conteos["parciales"],
+                        "notas_count": conteos["notas"],
+                        "progress": 100,
+                    }
+                )
+            except Exception as exc:
+                print(f"❌ [Scraper] Error en /api/auth/link-insweb/stream: {exc}", flush=True)
+                traceback.print_exc()
+                push(
+                    {
+                        "type": "error",
+                        "ok": False,
+                        "detail": str(exc),
+                        "step": state_ref["last_step"],
+                        "step_status": "error",
+                    }
+                )
+            finally:
+                try:
+                    thread_db.close()
+                except Exception:
+                    pass
+                _dec_scraper_jobs()
+                push(None)
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
+
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=15.0)
+            except asyncio.TimeoutError:
+                yield ": keepalive\n\n"
+                continue
+
+            if item is None:
+                break
+            yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # --- Endpoints de Herramientas de IA y Machine Learning ---

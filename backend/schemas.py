@@ -55,6 +55,23 @@ class ScraperSyncResponse(BaseModel):
     notas_count: int = 0
 
 
+class ScraperStatusResponse(BaseModel):
+    api_online: bool = True
+    playwright_ready: bool
+    insweb_url: str
+    insweb_reachable: Optional[bool] = None
+    insweb_latency_ms: Optional[int] = None
+    insweb_status_code: Optional[int] = None
+    sqlite_ready: bool
+    estudiantes_count: int = 0
+    active_jobs: int = 0
+    student_synced: Optional[bool] = None
+    student_last_sync: Optional[datetime] = None
+    student_inscripciones_count: Optional[int] = None
+    student_parciales_count: Optional[int] = None
+    student_notas_count: Optional[int] = None
+
+
 class InscripcionItem(BaseModel):
     carrera: Optional[str] = None
     asignatura: str

@@ -1,3 +1,5 @@
+import type { ScraperStreamEvent } from "./scraper";
+
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export interface RegisterParams {
@@ -92,4 +94,104 @@ export async function linkInswebAccount(cedula: string, pin: string): Promise<Li
   }
 
   return (await res.json()) as LinkInswebResult;
+}
+
+/**
+ * Vincula o re-sincroniza las materias y notas desde InsWeb recibiendo telemetría en vivo vía SSE.
+ */
+export async function linkInswebAccountStream(
+  cedula: string,
+  pin: string,
+  onEvent: (event: ScraperStreamEvent) => void,
+): Promise<LinkInswebResult> {
+  const res = await fetch(`${API_BASE}/api/auth/link-insweb/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify({ cedula, pin }),
+  });
+
+  if (!res.ok) {
+    const errData = (await res
+      .json()
+      .catch(() => ({ detail: "Error al iniciar la sincronización en vivo con INSWEB." }))) as {
+      detail?: string;
+    };
+    throw new Error(errData.detail || `Error al sincronizar (${res.status})`);
+  }
+
+  if (!res.body) {
+    throw new Error("El navegador no soporta lectura de flujo SSE.");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let finalResult: LinkInswebResult | null = null;
+  let streamError: string | null = null;
+
+  const processBlock = (rawBlock: string): void => {
+    const lines = rawBlock.split("\n");
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith(":")) continue;
+      if (!line.startsWith("data:")) continue;
+      const jsonText = line.slice(5).trim();
+      if (!jsonText) continue;
+
+      let parsed: ScraperStreamEvent;
+      try {
+        parsed = JSON.parse(jsonText) as ScraperStreamEvent;
+      } catch {
+        continue;
+      }
+
+      onEvent(parsed);
+
+      if (parsed.type === "complete") {
+        finalResult = {
+          ok: parsed.ok,
+          message: parsed.message,
+          cedula: parsed.cedula,
+          inscripciones_count: parsed.inscripciones_count,
+          parciales_count: parsed.parciales_count,
+          notas_count: parsed.notas_count,
+        };
+      } else if (parsed.type === "error") {
+        streamError = parsed.detail || "Error durante el scraping de INSWEB.";
+      }
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+
+    let sepIdx = buffer.indexOf("\n\n");
+    while (sepIdx !== -1) {
+      const block = buffer.slice(0, sepIdx);
+      buffer = buffer.slice(sepIdx + 2);
+      processBlock(block);
+      sepIdx = buffer.indexOf("\n\n");
+    }
+  }
+
+  if (buffer.trim()) {
+    processBlock(buffer);
+  }
+
+  if (streamError) {
+    throw new Error(streamError);
+  }
+
+  if (!finalResult) {
+    throw new Error(
+      "La conexión con el monitor de scraping se cerró antes de completar la sincronización.",
+    );
+  }
+
+  return finalResult;
 }

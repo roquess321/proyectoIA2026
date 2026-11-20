@@ -286,10 +286,11 @@ def predecir_probabilidad_lstm(
         tp = max(0.0, min(100.0, float(tplab)))
         seq.append([tp / 100.0, ((p1 + tp) / 2.0) / 100.0, (tp - p1) / 100.0, 2.0 / 3.0])
 
-    if tiene_sp:
+    if tiene_sp and segundo_parcial is not None:
         sp = max(0.0, min(100.0, float(segundo_parcial)))
-        prev_tp = float(tplab) if tiene_tp else p1
-        seq.append([sp / 100.0, ((p1 + (float(tplab) if tiene_tp else p1) + sp) / 3.0) / 100.0, (sp - prev_tp) / 100.0, 3.0 / 3.0])
+        prev_tp = float(tplab) if (tiene_tp and tplab is not None) else p1
+        prom_acum = ((p1 + float(tplab) + sp) / 3.0) if (tiene_tp and tplab is not None) else ((p1 + sp) / 2.0)
+        seq.append([sp / 100.0, prom_acum / 100.0, (sp - prev_tp) / 100.0, 3.0 / 3.0])
 
     x_tensor = torch.tensor([seq], dtype=torch.float32)
 

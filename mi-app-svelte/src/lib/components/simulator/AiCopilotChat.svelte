@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { fly, scale } from 'svelte/transition';
 	import type { ChatMessage, SubjectSimulation } from '../../types/simulator';
 	import type { GeminiChatMessage } from '../../services/types';
 	import { chat as geminiChat } from '../../services/gemini';
@@ -15,6 +16,7 @@
 
 	let { subject, quickPrompts, onSetP2, onSwitchSubject }: Props = $props();
 
+	let isOpen = $state(false);
 	let messages = $state<ChatMessage[]>([...initialChatMessages]);
 	let inputText = $state('');
 	let isTyping = $state(false);
@@ -24,6 +26,32 @@
 
 	/** Historial de conversación en memoria de la UI */
 	let geminiHistory = $state<GeminiChatMessage[]>([]);
+
+	function openChat(): void {
+		isOpen = true;
+		void scrollToBottom();
+	}
+
+	function closeChat(): void {
+		isOpen = false;
+	}
+
+	function handleKeydown(e: KeyboardEvent): void {
+		if (e.key === 'Escape' && isOpen) {
+			closeChat();
+		}
+	}
+
+	$effect(() => {
+		if (typeof document === 'undefined' || typeof window === 'undefined') return;
+		if (isOpen && window.innerWidth < 640) {
+			const prevOverflow = document.body.style.overflow;
+			document.body.style.overflow = 'hidden';
+			return () => {
+				document.body.style.overflow = prevOverflow;
+			};
+		}
+	});
 
 	async function scrollToBottom() {
 		await tick();
@@ -63,8 +91,14 @@
 		scrollToBottom();
 
 		// 2. Construir contexto para el Agente
+		const p1Text = subject.p1 !== null ? `${subject.p1}/${subject.p1Max}` : 'Pendiente';
+		const labText = subject.hasLab
+			? subject.lab !== null
+				? `${subject.lab}/${subject.labMax}`
+				: 'Pendiente'
+			: 'No posee laboratorio';
 		const contextPrefix = `[Contexto actual del simulador — Materia: ${subject.name} (${subject.catedra}), ` +
-			`Prof: ${subject.professor}, P1: ${subject.p1}/${subject.p1Max}, Lab: ${subject.lab}/${subject.labMax}, ` +
+			`Prof: ${subject.professor}, P1: ${p1Text}, Lab/TP: ${labText}, ` +
 			`Asistencia: ${subject.attendanceRate}%, Tema crítico: ${subject.criticalTopic}]\n\n`;
 
 		// Solo inyectar contexto institucional en el primer mensaje de la sesión
@@ -116,63 +150,99 @@
 	}
 </script>
 
-<div
-	class="col-span-12 xl:col-span-5 flex flex-col bg-surface-container-lowest rounded-xl shadow-md overflow-hidden xl:sticky xl:top-20"
->
-	<!-- Copilot Header -->
-	<div class="p-space-md bg-primary text-on-primary flex items-center justify-between">
-		<div class="flex items-center gap-space-sm">
-			<div class="relative">
-				<div
-					class="w-10 h-10 rounded-lg bg-primary-container text-secondary-fixed dark:text-[#b1c7f0] flex items-center justify-center font-bold"
-				>
-					<span class="material-symbols-outlined text-2xl">psychology</span>
-				</div>
-				<span
-					class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full ring-2 ring-primary"
-				></span>
-			</div>
-			<div class="flex flex-col">
-				<div class="flex items-center gap-1.5">
-					<span class="font-headline-sm text-headline-sm text-on-primary leading-tight font-bold">
-						Copiloto Académico
-					</span>
-					<span
-						class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-secondary text-on-secondary uppercase"
-					>
-						FastAPI + Gemini
-					</span>
-				</div>
-				<span class="font-label-sm text-label-sm text-secondary-fixed opacity-90">
-					Asistencia Académica con IA Generativa
-				</span>
-			</div>
-		</div>
+<svelte:window onkeydown={handleKeydown} />
 
-		<div class="flex items-center gap-1 text-on-primary">
-			<button
-				type="button"
-				class="p-1 rounded hover:bg-white/10 text-on-primary transition-colors cursor-pointer"
-				title="Reiniciar Sesión"
-				onclick={resetChat}
-			>
-				<span class="material-symbols-outlined text-lg">restart_alt</span>
-			</button>
-			<button
-				type="button"
-				class="p-1 rounded hover:bg-white/10 text-on-primary transition-colors cursor-pointer"
-				title="Parámetros del Agente"
-			>
-				<span class="material-symbols-outlined text-lg">more_vert</span>
-			</button>
-		</div>
-	</div>
-
-	<!-- Chat Stream Container -->
-	<div
-		bind:this={chatContainer}
-		class="p-3 sm:p-space-md flex flex-col gap-space-md overflow-y-auto h-[380px] sm:h-[460px] xl:h-[520px] bg-background"
+{#if !isOpen}
+	<!-- Burbuja Flotante Clicable -->
+	<button
+		type="button"
+		in:scale={{ duration: 180, start: 0.85 }}
+		onclick={openChat}
+		aria-label="Abrir chat del Copiloto Académico IA"
+		title="Abrir Copiloto Académico IA"
+		class="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-50 group flex items-center justify-center gap-2.5 w-14 h-14 sm:w-auto sm:h-14 sm:px-4 rounded-full bg-primary text-on-primary hover:bg-primary-container shadow-xl border border-white/15 transition-all hover:scale-105 active:scale-95 cursor-pointer"
 	>
+		<div class="relative flex items-center justify-center">
+			<span class="material-symbols-outlined text-2xl {isTyping ? 'animate-pulse' : ''}">psychology</span>
+			<span
+				class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ring-2 ring-primary {isTyping
+					? 'bg-amber-400 animate-ping'
+					: 'bg-emerald-400'}"
+			></span>
+		</div>
+		<span class="hidden sm:inline font-label-md text-label-md font-bold tracking-tight whitespace-nowrap">
+			Copiloto IA
+		</span>
+		{#if messages.length > 0}
+			<span
+				class="absolute -top-1 -right-1 sm:static sm:ml-0.5 min-w-[20px] h-5 px-1.5 rounded-full bg-secondary text-on-secondary text-[11px] font-code-num font-bold flex items-center justify-center shadow-xs"
+			>
+				{messages.length}
+			</span>
+		{/if}
+	</button>
+{:else}
+	<!-- Ventana Flotante (Escritorio) / Pantalla Completa (Celular) -->
+	<div
+		in:fly={{ y: 20, duration: 200 }}
+		class="fixed inset-0 z-[60] w-full h-[100dvh] rounded-none sm:inset-auto sm:bottom-6 sm:right-6 sm:w-[440px] md:w-[460px] sm:h-[680px] sm:max-h-[calc(100vh-3rem)] sm:rounded-2xl sm:border sm:border-outline-variant/30 sm:shadow-2xl flex flex-col bg-surface-container-lowest overflow-hidden"
+	>
+		<!-- Copilot Header -->
+		<div class="p-space-md bg-primary text-on-primary flex items-center justify-between shrink-0">
+			<div class="flex items-center gap-space-sm">
+				<div class="relative">
+					<div
+						class="w-10 h-10 rounded-lg bg-primary-container text-secondary-fixed dark:text-[#b1c7f0] flex items-center justify-center font-bold"
+					>
+						<span class="material-symbols-outlined text-2xl">psychology</span>
+					</div>
+					<span
+						class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full ring-2 ring-primary"
+					></span>
+				</div>
+				<div class="flex flex-col">
+					<div class="flex items-center gap-1.5">
+						<span class="font-headline-sm text-headline-sm text-on-primary leading-tight font-bold">
+							Copiloto Académico
+						</span>
+						<span
+							class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-secondary text-on-secondary uppercase"
+						>
+							FastAPI + Gemini
+						</span>
+					</div>
+					<span class="font-label-sm text-label-sm text-secondary-fixed opacity-90">
+						Asistencia Académica con IA Generativa
+					</span>
+				</div>
+			</div>
+
+			<div class="flex items-center gap-1 text-on-primary">
+				<button
+					type="button"
+					class="p-1.5 rounded hover:bg-white/10 text-on-primary transition-colors cursor-pointer"
+					title="Reiniciar Sesión"
+					onclick={resetChat}
+				>
+					<span class="material-symbols-outlined text-lg">restart_alt</span>
+				</button>
+				<button
+					type="button"
+					class="p-1.5 rounded hover:bg-white/10 text-on-primary transition-colors cursor-pointer"
+					title="Minimizar chat"
+					aria-label="Cerrar chat"
+					onclick={closeChat}
+				>
+					<span class="material-symbols-outlined text-lg">close</span>
+				</button>
+			</div>
+		</div>
+
+		<!-- Chat Stream Container -->
+		<div
+			bind:this={chatContainer}
+			class="flex-1 min-h-0 p-3 sm:p-space-md flex flex-col gap-space-md overflow-y-auto bg-background"
+		>
 		<!-- Timestamp divider -->
 		<div class="flex items-center justify-center my-1">
 			<span
@@ -300,7 +370,7 @@
 	</div>
 
 	<!-- Quick Action Prompt Chips (Scroll Horizontal Ergonómico en Móvil) -->
-	<div class="px-3 sm:px-space-md py-2 bg-surface-container-low flex items-center gap-1.5 overflow-x-auto scroll-smooth whitespace-nowrap">
+	<div class="shrink-0 border-t border-outline-variant/15 px-3 sm:px-space-md py-2 bg-surface-container-low flex items-center gap-1.5 overflow-x-auto scroll-smooth whitespace-nowrap">
 		{#each quickPrompts as promptText}
 			<button
 				type="button"
@@ -321,7 +391,7 @@
 	</div>
 
 	<!-- Interactive Input Area -->
-	<div class="p-3 sm:p-space-md bg-surface-container-lowest flex flex-col gap-space-xs">
+	<div class="shrink-0 border-t border-outline-variant/15 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-space-md bg-surface-container-lowest flex flex-col gap-space-xs">
 		<form
 			class="flex items-center gap-space-xs relative"
 			onsubmit={(e) => {
@@ -358,4 +428,5 @@
 			</span>
 		</div>
 	</div>
-</div>
+	</div>
+{/if}

@@ -3,7 +3,9 @@ import type {
 	FastApiChatResponse,
 	FastApiHistoryResponse,
 	FastApiSessionSummary,
-	MLPredictResponse
+	MLPredictResponse,
+	MLSequentialPredictResponse,
+	MLModelsCatalogResponse
 } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -122,18 +124,58 @@ export async function getMLPrediction(
 }
 
 /**
+ * Consulta la predicción progresiva de Serie Temporal + Red Neuronal LSTM.
+ */
+export async function getMLSequentialPrediction(
+	materia: string,
+	primerParcial: number,
+	tplab?: number | null,
+	segundoParcial?: number | null
+): Promise<MLSequentialPredictResponse> {
+	const response = await fetch(`${API_BASE}/api/ml/predict-sequential`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			materia,
+			primer_parcial: primerParcial,
+			tplab: tplab ?? null,
+			segundo_parcial: segundoParcial ?? null
+		})
+	});
+
+	if (!response.ok) {
+		const err = await response.text();
+		throw new Error(`Error en predicción temporal ML (${response.status}): ${err}`);
+	}
+
+	return response.json();
+}
+
+/**
  * Obtiene la lista de modelos de Machine Learning cargados y disponibles en el servidor.
  */
-export async function getAvailableMLModels(): Promise<{
-	primer_parcial: Array<Record<string, unknown>>;
-	segundo_parcial: Array<Record<string, unknown>>;
-	modelos_activos: string[];
-	variables_requeridas: string[];
-}> {
+export async function getAvailableMLModels(): Promise<MLModelsCatalogResponse> {
 	const response = await fetch(`${API_BASE}/api/ml/models`);
 	if (!response.ok) {
 		throw new Error('No se pudo obtener el catálogo de modelos ML.');
 	}
 	return response.json();
+}
+
+/**
+ * Mide la latencia real de respuesta del servidor backend FastAPI mediante GET /.
+ */
+export async function pingBackendHealth(): Promise<{ online: boolean; latencyMs: number | null }> {
+	const start = performance.now();
+	try {
+		const response = await fetch(`${API_BASE}/`);
+		if (!response.ok) {
+			return { online: false, latencyMs: null };
+		}
+		const elapsed = Math.round(performance.now() - start);
+		return { online: true, latencyMs: elapsed };
+	} catch {
+		return { online: false, latencyMs: null };
+	}
 }
 

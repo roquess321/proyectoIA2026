@@ -190,7 +190,11 @@
 		<!-- Derecha: Calendario de Evaluaciones, Copiloto IA y Avisos (4 Cols) -->
 		<div class="lg:col-span-4 flex flex-col gap-space-md">
 			<ExamCalendar exams={dashboard.exams} />
-			<AiCopilotCard />
+			<AiCopilotCard
+				courses={dashboard.courses}
+				isRealData={dashboard.isRealData}
+				totalAprobadas={dashboard.totalAprobadas}
+			/>
 			<NoticeCard />
 		</div>
 	</div>
