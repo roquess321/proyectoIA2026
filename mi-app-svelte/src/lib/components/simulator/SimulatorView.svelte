@@ -7,9 +7,14 @@
 	import {
 		getAvailableMLModels,
 		getMLPrediction,
-		getMLSequentialPrediction
+		getMLSequentialPrediction,
+		retrainMLModels
 	} from '../../services/gemini';
-	import type { MLPredictResponse, MLSequentialPredictResponse } from '../../services/types';
+	import type {
+		MLModelsCatalogResponse,
+		MLPredictResponse,
+		MLSequentialPredictResponse
+	} from '../../services/types';
 	import type { SubjectSimulation } from '../../types/simulator';
 	import PredictiveHeader from './PredictiveHeader.svelte';
 	import GaugeChart from './GaugeChart.svelte';
@@ -21,14 +26,35 @@
 	let studentData = $state<EstudianteSummary | null>(null);
 
 	// Estado del motor ML / Deep Learning real del backend
-	let bestAuc = $state<number | null>(null);
-	let sampleCount = $state<number | null>(null);
-	let activeModelsCount = $state<number | null>(null);
+	let mlCatalog = $state<MLModelsCatalogResponse | null>(null);
 	let mlPrediction = $state<MLPredictResponse | null>(null);
 	let mlSequential = $state<MLSequentialPredictResponse | null>(null);
 	let mlLoading = $state(false);
 	let mlOnline = $state(false);
 	let mlRequestSeq = 0;
+
+	// Estado de reentrenamiento por materia
+	let isRetraining = $state(false);
+	let retrainMessage = $state<string | null>(null);
+	let retrainError = $state<string | null>(null);
+	let lastRetrainDuration = $state<number | null>(null);
+	let retrainVersion = $state(0);
+
+	function slugifySubject(name: string): string {
+		let s = name.trim().toLowerCase();
+		const accents: Array<[string, string]> = [
+			['á', 'a'],
+			['é', 'e'],
+			['í', 'i'],
+			['ó', 'o'],
+			['ú', 'u'],
+			['ñ', 'n']
+		];
+		for (const [acc, raw] of accents) {
+			s = s.replaceAll(acc, raw);
+		}
+		return s.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+	}
 
 	const user = $derived(authState.user);
 
@@ -51,14 +77,7 @@
 
 	async function loadModelCatalog(): Promise<void> {
 		try {
-			const catalog = await getAvailableMLModels();
-			activeModelsCount = catalog.modelos_activos.length;
-			sampleCount = catalog.primer_parcial?.[0]?.total_muestras ?? null;
-			bestAuc =
-				catalog.series_temporales?.ensamble_clasico?.[0]?.metricas?.hito_3_proceso_completo
-					?.auc_roc ??
-				catalog.primer_parcial?.[0]?.metricas?.random_forest?.auc_roc ??
-				null;
+			mlCatalog = await getAvailableMLModels();
 			mlOnline = true;
 		} catch {
 			mlOnline = false;
@@ -104,11 +123,70 @@
 		simData.subjects.find((s) => s.id === selectedSubjectId) ?? simData.subjects[0]
 	);
 
+	let currentSubjectSlug = $derived(slugifySubject(currentSubject.name));
+
+	let matchedClassicModel = $derived(
+		mlCatalog?.primer_parcial?.find((m) => m.materia_slug === currentSubjectSlug) ??
+			mlCatalog?.primer_parcial?.find((m) => m.materia_slug === 'estatica') ??
+			mlCatalog?.primer_parcial?.[0] ??
+			null
+	);
+
+	let matchedSeriesModel = $derived(
+		mlCatalog?.series_temporales?.ensamble_clasico?.find(
+			(m) => m.slug === currentSubjectSlug
+		) ??
+			mlCatalog?.series_temporales?.ensamble_clasico?.find((m) => m.slug === 'estatica') ??
+			mlCatalog?.series_temporales?.ensamble_clasico?.[0] ??
+			null
+	);
+
+	let matchedLstmModel = $derived(
+		mlCatalog?.series_temporales?.red_neuronal_lstm?.find(
+			(m) => m.slug === currentSubjectSlug
+		) ??
+			mlCatalog?.series_temporales?.red_neuronal_lstm?.find((m) => m.slug === 'estatica') ??
+			mlCatalog?.series_temporales?.red_neuronal_lstm?.[0] ??
+			null
+	);
+
+	let isSpecificModel = $derived(
+		Boolean(
+			mlCatalog &&
+				(mlCatalog.primer_parcial?.some((m) => m.materia_slug === currentSubjectSlug) ||
+					mlCatalog.series_temporales?.ensamble_clasico?.some(
+						(m) => m.slug === currentSubjectSlug
+					))
+		)
+	);
+
+	let activeModelLabel = $derived(
+		isSpecificModel
+			? (matchedClassicModel?.materia_dataset ??
+					matchedSeriesModel?.materia_dataset ??
+					currentSubject.name)
+			: 'estatica (modelo base)'
+	);
+
+	let activeModelsCount = $derived(mlCatalog?.modelos_activos?.length ?? null);
+	let sampleCount = $derived(
+		matchedClassicModel?.total_muestras ??
+			matchedSeriesModel?.total_registros_entrenamiento ??
+			null
+	);
+	let bestAuc = $derived(
+		matchedSeriesModel?.metricas?.hito_3_proceso_completo?.auc_roc ??
+			matchedClassicModel?.metricas?.random_forest?.auc_roc ??
+			null
+	);
+
 	// Llamada reactiva con debounce de 250ms al motor real (completo 5 modelos o secuencial por hito)
 	$effect(() => {
 		const subj = currentSubject;
 		const p2Proj = includeP2Projection;
 		const p2Val = p2Value;
+		const _retrainTrigger = retrainVersion;
+		void _retrainTrigger;
 
 		if (subj.p1 === null) {
 			++mlRequestSeq;
@@ -182,10 +260,32 @@
 
 	function handleSubjectChange(newId: string) {
 		selectedSubjectId = newId;
+		retrainMessage = null;
+		retrainError = null;
+		lastRetrainDuration = null;
 		const found = simData.subjects.find((s) => s.id === newId);
 		if (found) {
 			p2Value = found.defaultP2;
 			includeP2Projection = found.hasOfficialWeights || found.p2 !== null;
+		}
+	}
+
+	async function handleRetrainCurrentSubject(): Promise<void> {
+		if (isRetraining) return;
+		isRetraining = true;
+		retrainMessage = null;
+		retrainError = null;
+		try {
+			const res = await retrainMLModels(currentSubject.name);
+			retrainMessage = res.mensaje;
+			lastRetrainDuration = res.duracion_seg;
+			await loadModelCatalog();
+			retrainVersion += 1;
+		} catch (err: unknown) {
+			retrainError =
+				err instanceof Error ? err.message : 'No se pudo reentrenar el modelo para esta materia.';
+		} finally {
+			isRetraining = false;
 		}
 	}
 
@@ -306,6 +406,16 @@
 		{sampleCount}
 		{activeModelsCount}
 		isBackendLive={mlOnline}
+		{activeModelLabel}
+		{isSpecificModel}
+		{isRetraining}
+		{retrainMessage}
+		{retrainError}
+		{lastRetrainDuration}
+		classicMetadata={matchedClassicModel}
+		seriesMetadata={matchedSeriesModel}
+		lstmMetadata={matchedLstmModel}
+		onRetrain={handleRetrainCurrentSubject}
 	/>
 
 	<!-- Primary Workspace: Paneles Predictivos en Ancho Completo -->

@@ -58,11 +58,20 @@ from backend.schemas import (
     MLPredictResponse,
     MLSequentialPredictRequest,
     MLSequentialPredictResponse,
+    MLRetrainRequest,
+    MLRetrainResponse,
+    OfficialScheduleResponse,
 )
 from backend.services.llm import call_gemini
+from backend.services.schedule import cargar_calendario_oficial
 from backend.services.scraper import ejecutar_pipeline_estudiante
 from backend.services.security import hash_password, verify_password
-from backend.services.ml import predecir_aprobacion, predecir_serie_temporal, obtener_modelos_disponibles
+from backend.services.ml import (
+    predecir_aprobacion,
+    predecir_serie_temporal,
+    obtener_modelos_disponibles,
+    reentrenar_modelos_materia,
+)
 
 
 @asynccontextmanager
@@ -780,12 +789,60 @@ def predecir_serie_temporal_endpoint(req: MLSequentialPredictRequest):
         )
 
 
+@app.get("/api/horarios/examenes", response_model=OfficialScheduleResponse, tags=["Horarios Oficiales"])
+def obtener_horarios_examenes(
+    cedula: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Lee el calendario oficial de exámenes desde data/horarios_oficiales/calendario_examenes.json.
+    Si se envía `cedula`, filtra los exámenes correspondientes a la carrera y asignaturas inscritas del estudiante.
+    """
+    inscripciones_asigs: Optional[List[str]] = None
+    carreras_alumno: List[str] = []
+    if cedula and cedula.strip():
+        clean_ci = cedula.strip().replace(".", "")
+        rows = db.query(Inscripcion).filter(Inscripcion.cedula == clean_ci).all()
+        if rows:
+            inscripciones_asigs = [r.asignatura for r in rows if r.asignatura]
+            carreras_alumno.extend([r.carrera for r in rows if r.carrera])
+        usuario = db.query(UsuarioLocal).filter(UsuarioLocal.cedula == clean_ci).first()
+        if usuario and usuario.carrera:
+            carreras_alumno.append(usuario.carrera)
+
+    return cargar_calendario_oficial(
+        inscripciones=inscripciones_asigs,
+        carreras_alumno=carreras_alumno or None,
+    )
+
+
 @app.get("/api/ml/models", tags=["Machine Learning"])
 def listar_modelos_ml():
     """
     Retorna la lista de modelos entrenados disponibles (del 1er parcial y preparados para el 2do parcial).
     """
     return obtener_modelos_disponibles()
+
+
+@app.post("/api/ml/retrain", response_model=MLRetrainResponse, tags=["Machine Learning"])
+def reentrenar_modelos_ml_endpoint(req: MLRetrainRequest):
+    """
+    Reentrena los 5 modelos (Regresión Logística, Árbol de Decisión, Random Forest,
+    Serie Temporal Gradient Boosting y Red Neuronal LSTM) específicamente para la asignatura indicada.
+    """
+    try:
+        return reentrenar_modelos_materia(req.materia)
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al reentrenar los modelos para '{req.materia}': {str(e)}",
+        )
 
 
 if __name__ == "__main__":

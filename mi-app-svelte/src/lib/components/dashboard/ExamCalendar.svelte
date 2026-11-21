@@ -1,11 +1,22 @@
 ﻿<script lang="ts">
 	import type { ExamEvent } from '../../types/academic';
+	import { getCurrentAcademicPeriod } from '../../services/period';
 
 	interface Props {
 		exams: ExamEvent[];
+		isOfficialSource?: boolean;
+		sourceLabel?: string | null;
+		periodCode?: string | null;
 	}
 
-	let { exams }: Props = $props();
+	let {
+		exams,
+		isOfficialSource = false,
+		sourceLabel = null,
+		periodCode = null
+	}: Props = $props();
+	const currentPeriod = getCurrentAcademicPeriod();
+	let displayPeriod = $derived(periodCode || currentPeriod.code);
 </script>
 
 <div class="flex flex-col rounded-xl bg-surface-container-lowest p-space-md shadow-sm">
@@ -19,13 +30,26 @@
 		<span
 			class="font-label-sm text-label-sm text-on-surface-variant bg-surface-container px-2 py-0.5 rounded font-code-num"
 		>
-			FIUNA 2024-2
+			FIUNA {displayPeriod}
 		</span>
 	</div>
 
-	<p class="font-body-sm text-body-sm text-on-surface-variant">
-		Fechas oficiales de 2dos Parciales y Periodos Ordinarios de Finales según cronograma de Facultad.
-	</p>
+	<div class="flex items-center justify-between gap-2 flex-wrap">
+		<p class="font-body-sm text-body-sm text-on-surface-variant">
+			Fechas de Parciales y Periodos Ordinarios de Finales según cronograma de Facultad.
+		</p>
+		<span
+			class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-code-num text-[11px] font-semibold {isOfficialSource
+				? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+				: 'bg-amber-500/15 text-amber-700 dark:text-amber-300'}"
+			title={sourceLabel || 'data/horarios_oficiales/calendario_examenes.json'}
+		>
+			<span class="material-symbols-outlined text-xs">
+				{isOfficialSource ? 'folder_data' : 'schedule'}
+			</span>
+			{isOfficialSource ? 'Horario Oficial (Archivo)' : 'Referencia Simulada'}
+		</span>
+	</div>
 
 	<!-- Exam Items List -->
 	<div class="mt-space-md flex flex-col gap-space-sm">

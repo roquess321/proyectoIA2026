@@ -175,3 +175,48 @@ export async function getEstudiante(
   }
   return (await res.json()) as EstudianteSummary;
 }
+
+export interface OfficialExamItem {
+  id: string;
+  asignatura: string;
+  instancia: string;
+  fecha: string;
+  month: string;
+  day: string;
+  title: string;
+  subtitle: string;
+  days_remaining: number;
+  time: string;
+  urgency: "normal" | "critical" | "final";
+}
+
+export interface OfficialScheduleResponse {
+  source: string;
+  periodo: string | null;
+  fuente: string;
+  actualizado_en: string | null;
+  archivo: string;
+  examenes: OfficialExamItem[];
+}
+
+/**
+ * Obtiene el calendario oficial de exámenes leído desde data/horarios_oficiales/.
+ */
+export async function getOfficialExamSchedule(
+  cedula?: string | null,
+): Promise<OfficialScheduleResponse> {
+  const params = new URLSearchParams();
+  if (cedula && cedula.trim()) {
+    params.set("cedula", cedula.trim());
+  }
+  const query = params.toString();
+  const url = query
+    ? `${API_BASE}/api/horarios/examenes?${query}`
+    : `${API_BASE}/api/horarios/examenes`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Error al consultar calendario oficial (${res.status})`);
+  }
+  return (await res.json()) as OfficialScheduleResponse;
+}

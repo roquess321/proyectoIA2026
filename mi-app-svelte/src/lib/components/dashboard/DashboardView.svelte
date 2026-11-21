@@ -2,8 +2,14 @@
 	import { onMount } from "svelte";
 	import { academicState } from "../../academic-state.svelte";
 	import { authState } from "../../auth-state.svelte";
-	import { getEstudiante, type EstudianteSummary } from "../../services/scraper";
+	import {
+		getEstudiante,
+		getOfficialExamSchedule,
+		type EstudianteSummary,
+		type OfficialScheduleResponse
+	} from "../../services/scraper";
 	import { buildDashboardData, type DashboardData } from "../../services/dashboard-stats";
+	import type { ExamEvent } from "../../types/academic";
 	import StatusBanner from "./StatusBanner.svelte";
 	import StatCards from "./StatCards.svelte";
 	import CourseTracker from "./CourseTracker.svelte";
@@ -14,10 +20,20 @@
 	let isLoading = $state(false);
 	let loadError = $state<string | null>(null);
 	let studentData = $state<EstudianteSummary | null>(null);
+	let officialSchedule = $state<OfficialScheduleResponse | null>(null);
 
 	const user = $derived(authState.user);
 
+	async function loadOfficialSchedule(): Promise<void> {
+		try {
+			officialSchedule = await getOfficialExamSchedule(user?.cedula);
+		} catch {
+			officialSchedule = null;
+		}
+	}
+
 	async function loadStudentStats(): Promise<void> {
+		void loadOfficialSchedule();
 		if (!user?.cedula) {
 			studentData = null;
 			return;
@@ -38,21 +54,51 @@
 
 	onMount(() => {
 		academicState.activeNav = "dashboard";
+		void loadOfficialSchedule();
 		if (user?.cedula) {
-			loadStudentStats();
+			void loadStudentStats();
 		}
 	});
 
 	$effect(() => {
 		// Reaccionar cuando cambie la cédula o el estado de sesión
 		if (user?.cedula) {
-			loadStudentStats();
+			void loadStudentStats();
 		} else {
 			studentData = null;
+			void loadOfficialSchedule();
 		}
 	});
 
 	let dashboard: DashboardData = $derived(buildDashboardData(studentData, user));
+
+	let activeExams = $derived.by<ExamEvent[]>(() => {
+		if (
+			officialSchedule &&
+			officialSchedule.source === "archivo_oficial" &&
+			officialSchedule.examenes.length > 0
+		) {
+			return officialSchedule.examenes.map((ex) => ({
+				id: ex.id,
+				month: ex.month,
+				day: ex.day,
+				title: ex.title,
+				subtitle: ex.subtitle,
+				daysRemaining: ex.days_remaining,
+				time: ex.time,
+				urgency: ex.urgency
+			}));
+		}
+		return dashboard.exams;
+	});
+
+	let hasOfficialSchedule = $derived(
+		Boolean(
+			officialSchedule &&
+				officialSchedule.source === "archivo_oficial" &&
+				officialSchedule.examenes.length > 0
+		)
+	);
 </script>
 
 <svelte:head>
@@ -189,7 +235,12 @@
 
 		<!-- Derecha: Calendario de Evaluaciones, Copiloto IA y Avisos (4 Cols) -->
 		<div class="lg:col-span-4 flex flex-col gap-space-md">
-			<ExamCalendar exams={dashboard.exams} />
+			<ExamCalendar
+				exams={activeExams}
+				isOfficialSource={hasOfficialSchedule}
+				sourceLabel={officialSchedule?.fuente ?? null}
+				periodCode={officialSchedule?.periodo ?? null}
+			/>
 			<AiCopilotCard
 				courses={dashboard.courses}
 				isRealData={dashboard.isRealData}

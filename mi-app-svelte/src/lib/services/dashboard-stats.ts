@@ -117,14 +117,17 @@ export function buildDashboardData(
   const creditosEstimados = totalAprobadas * 4;
   const totalCreditos = 235;
 
-  // 3. SEMESTRE ACTUAL ESTIMADO
-  let maxSemestre = 1;
+  // 3. SEMESTRE ACTUAL OFICIAL (semestre de la asignatura inscrita más baja)
+  let minSemestre: number | null = null;
   for (const ins of inscripciones) {
-    const semNum = parseInt(ins.semestre || "1", 10);
-    if (!isNaN(semNum) && semNum > maxSemestre && semNum <= 10) {
-      maxSemestre = semNum;
+    const semNum = parseInt(ins.semestre ?? "", 10);
+    if (!isNaN(semNum) && semNum >= 1 && semNum <= 10) {
+      if (minSemestre === null || semNum < minSemestre) {
+        minSemestre = semNum;
+      }
     }
   }
+  const semestreActual = minSemestre ?? 1;
 
   // Plan deducido de la inscripción o usuario
   const planInfo = inscripciones[0]?.carrera?.includes("2023")
@@ -140,7 +143,7 @@ export function buildDashboardData(
     matricula: user.cedula,
     carrera: user.carrera || "Ingeniería",
     plan: planInfo,
-    semestre: `${maxSemestre}º Semestre`,
+    semestre: `${semestreActual}º Semestre`,
     avatarUrl: "",
   };
 
@@ -294,7 +297,7 @@ export function buildDashboardData(
     // Código simplificado de cátedra
     const words = cleanName.split(" ");
     const codePrefix = words[0]?.slice(0, 3).toUpperCase() || "ASI";
-    const code = `${codePrefix}-${(index + 1) * 100 + maxSemestre * 10}`;
+    const code = `${codePrefix}-${(index + 1) * 100 + semestreActual * 10}`;
 
     return {
       id: `course-${index + 1}`,
@@ -355,7 +358,7 @@ export function buildDashboardData(
       unit: "asignaturas",
       icon: "layers",
       footerType: "badge",
-      badgeText: `Ciclo ${maxSemestre}º Semestre (${inscripciones.length * 5} hs/sem)`,
+      badgeText: `Ciclo ${semestreActual}º Semestre (${inscripciones.length * 5} hs/sem)`,
       badgeIcon: "schedule",
     },
     {

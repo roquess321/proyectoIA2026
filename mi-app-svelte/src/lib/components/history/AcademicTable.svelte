@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { AcademicRecord } from '../../types/academic-history';
+	import { formatPeriodLabel } from '../../services/period';
 
 	export interface Props {
 		records: AcademicRecord[];
@@ -13,6 +14,15 @@
 	let deptFilter = $state('ALL');
 	let statusFilter = $state('ALL');
 	let searchQuery = $state('');
+
+	let availablePeriods = $derived.by(() => {
+		const unique = Array.from(new Set(records.map((r) => r.period).filter(Boolean)));
+		return unique.sort((a, b) => {
+			if (a === 'Proyectado') return 1;
+			if (b === 'Proyectado') return -1;
+			return b.localeCompare(a, undefined, { numeric: true });
+		});
+	});
 
 	let filteredRecords = $derived(
 		records.filter((rec) => {
@@ -48,12 +58,9 @@
 					bind:value={periodFilter}
 				>
 					<option value="ALL">Todos los Periodos</option>
-					<option value="2021-1">2021-1 (1er Ciclo)</option>
-					<option value="2021-2">2021-2 (2do Ciclo)</option>
-					<option value="2022-2">2022-2 (2do Ciclo)</option>
-					<option value="2023-1">2023-1 (1er Ciclo)</option>
-					<option value="2024-2">2024-2 (2do Ciclo)</option>
-					<option value="Proyectado">Proyectado</option>
+					{#each availablePeriods as period (period)}
+						<option value={period}>{formatPeriodLabel(period)}</option>
+					{/each}
 				</select>
 			</div>
 

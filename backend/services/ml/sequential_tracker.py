@@ -23,6 +23,13 @@ def _slugify(nombre: str) -> str:
     return "".join(c if c.isalnum() else "_" for c in slug).strip("_")
 
 
+def limpiar_cache_serie(slug: Optional[str] = None) -> None:
+    if slug:
+        _CACHE_SERIES.pop(slug, None)
+    else:
+        _CACHE_SERIES.clear()
+
+
 def entrenar_modelos_serie_temporal(
     materia: str = "ESTATICA",
     csv_path: str = CSV_PATH,
@@ -37,17 +44,14 @@ def entrenar_modelos_serie_temporal(
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Dataset de entrenamiento no encontrado en: {csv_path}")
 
-    from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.preprocessing import StandardScaler
+    from sklearn.ensemble import GradientBoostingClassifier
     from sklearn.model_selection import train_test_split
-    from sklearn.metrics import roc_auc_score, accuracy_score
+    from sklearn.metrics import roc_auc_score
+    from .trainer import resolver_dataset_materia
 
-    df = pd.read_csv(csv_path, low_memory=False)
-    mask = df["Asignatura"].str.upper().str.contains(materia.upper(), na=False)
-    df_materia = df[mask].copy() if mask.sum() >= 50 else df.copy()
-
-    df_materia = df_materia.dropna(subset=["Aprobado"])
+    df_materia, materia_dataset, fallback_global = resolver_dataset_materia(
+        csv_path, materia_filtro=materia, min_muestras=50
+    )
     y = (df_materia["Aprobado"].astype(str).str.upper() == "S").astype(int)
 
     # Conversión numérica de notas
@@ -94,6 +98,8 @@ def entrenar_modelos_serie_temporal(
     metadata = {
         "materia": materia,
         "slug": slug,
+        "materia_dataset": materia_dataset,
+        "fallback_global": fallback_global,
         "tipo_modelo": "Serie Temporal Multi-Hito / Proceso Secuencial",
         "metricas": {
             "hito_1_primer_parcial": {"auc_roc": round(auc1, 4), "variables": ["Primer.Par"]},
@@ -105,6 +111,7 @@ def entrenar_modelos_serie_temporal(
     with open(os.path.join(folder, "metadata_serie.json"), "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 
+    limpiar_cache_serie(slug)
     return metadata
 
 

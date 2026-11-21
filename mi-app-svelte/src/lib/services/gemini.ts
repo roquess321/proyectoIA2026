@@ -5,7 +5,8 @@ import type {
 	FastApiSessionSummary,
 	MLPredictResponse,
 	MLSequentialPredictResponse,
-	MLModelsCatalogResponse
+	MLModelsCatalogResponse,
+	MLRetrainResponse
 } from './types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -160,6 +161,28 @@ export async function getAvailableMLModels(): Promise<MLModelsCatalogResponse> {
 		throw new Error('No se pudo obtener el catálogo de modelos ML.');
 	}
 	return response.json();
+}
+
+/**
+ * Reentrena los 5 modelos ML/LSTM del backend específicamente para una asignatura.
+ */
+export async function retrainMLModels(materia: string): Promise<MLRetrainResponse> {
+	const response = await fetch(`${API_BASE}/api/ml/retrain`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ materia })
+	});
+
+	if (!response.ok) {
+		const errData = (await response
+			.json()
+			.catch(() => ({ detail: 'Error al reentrenar los modelos en el servidor.' }))) as {
+			detail?: string;
+		};
+		throw new Error(errData.detail || `Error al reentrenar modelos (${response.status})`);
+	}
+
+	return (await response.json()) as MLRetrainResponse;
 }
 
 /**

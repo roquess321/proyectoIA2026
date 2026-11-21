@@ -49,7 +49,7 @@ export const metricCards: MetricCard[] = [
 		unit: 'asignaturas',
 		icon: 'layers',
 		footerType: 'badge',
-		badgeText: 'Ciclo 2024-2 (24 hs/sem)',
+		badgeText: 'Ciclo 2026-2 (24 hs/sem)',
 		badgeIcon: 'schedule'
 	},
 	{

@@ -1,0 +1,34 @@
+{
+  "materia": "INTELIGENCIA ARTIFICIAL",
+  "slug": "inteligencia_artificial",
+  "materia_dataset": "INTELIGENCIA ARTIFICIAL (33 únicos: 18S/15N) + Cohorte FIUNA",
+  "fallback_global": true,
+  "tipo_arquitectura": "Red Neuronal Recurrente LSTM (PyTorch)",
+  "hiperparametros": {
+    "input_size": 4,
+    "hidden_size": 32,
+    "num_layers": 2,
+    "dropout": 0.2,
+    "epochs": 40,
+    "learning_rate": 0.003,
+    "optimizer": "Adam"
+  },
+  "metricas_por_hito": {
+    "hito_1_primer_parcial": {
+      "auc_roc": 0.8464,
+      "longitud_secuencia": 1
+    },
+    "hito_2_tp_taller": {
+      "auc_roc": 0.8647,
+      "longitud_secuencia": 2
+    },
+    "hito_3_proceso_completo": {
+      "auc_roc": 0.8808,
+      "accuracy": 0.8182,
+      "f1_score": 0.8393,
+      "longitud_secuencia": 3
+    }
+  },
+  "total_estudiantes_entrenamiento": 294,
+  "total_estudiantes_test": 99
+}

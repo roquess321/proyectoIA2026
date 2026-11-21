@@ -1,5 +1,7 @@
 import os
 import json
+import threading
+import time
 import joblib
 import pandas as pd
 from typing import Dict, Any, List, Optional
@@ -14,6 +16,83 @@ MODELS_DIR_PARCIAL_1 = os.path.join(PROJECT_ROOT, "ejemplos_modelos_ingorar_gith
 MODELS_DIR_PARCIAL_2 = os.path.join(PROJECT_ROOT, "ejemplos_modelos_ingorar_github", "modelos_segundo_parcial")
 
 _CACHE_MODELOS: Dict[str, Dict[str, Any]] = {}
+_RETRAIN_LOCK = threading.Lock()
+
+
+def limpiar_cache_modelos(slug: Optional[str] = None) -> None:
+    if slug:
+        _CACHE_MODELOS.pop(slug, None)
+    else:
+        _CACHE_MODELOS.clear()
+
+
+def reentrenar_modelos_materia(materia: str) -> Dict[str, Any]:
+    """
+    Reentrena los 5 modelos (3 clásicos + Serie Temporal GB + Red Neuronal LSTM)
+    filtrando el dataset histórico por la materia solicitada (con fallback global
+    si no existen suficientes registros históricos para esa asignatura).
+    """
+    materia_clean = materia.strip() if materia and materia.strip() else "ESTATICA"
+    slug = _slugify(materia_clean) or "estatica"
+
+    with _RETRAIN_LOCK:
+        t0 = time.perf_counter()
+        from .trainer import entrenar_modelos_primer_parcial
+        from .sequential_tracker import entrenar_modelos_serie_temporal, limpiar_cache_serie
+        from .lstm_tracker import entrenar_modelo_lstm, limpiar_cache_lstm
+
+        meta_clasico = entrenar_modelos_primer_parcial(
+            materia=materia_clean,
+            salida_dir=MODELS_DIR_PACKAGE,
+        )
+        meta_serie = entrenar_modelos_serie_temporal(materia=materia_clean)
+        meta_lstm = entrenar_modelo_lstm(materia=materia_clean)
+
+        limpiar_cache_modelos(slug)
+        limpiar_cache_serie(slug)
+        limpiar_cache_lstm(slug)
+
+        duracion_seg = round(time.perf_counter() - t0, 2)
+
+        auc_gb_h3 = (
+            meta_serie.get("metricas", {})
+            .get("hito_3_proceso_completo", {})
+            .get("auc_roc", 0.0)
+        )
+        auc_lstm_h3 = (
+            meta_lstm.get("metricas_por_hito", {})
+            .get("hito_3_proceso_completo", {})
+            .get("auc_roc", 0.0)
+        )
+        auc_rf = (
+            meta_clasico.get("metricas", {})
+            .get("random_forest", {})
+            .get("auc_roc", 0.0)
+        )
+
+        return {
+            "ok": True,
+            "materia": materia_clean,
+            "materia_slug": slug,
+            "materia_dataset": meta_clasico.get("materia_dataset", materia_clean),
+            "fallback_global": bool(meta_clasico.get("fallback_global", False)),
+            "total_muestras": int(meta_clasico.get("total_muestras", 0)),
+            "duracion_seg": duracion_seg,
+            "metricas": {
+                "tasa_aprobacion_real": meta_clasico.get("tasa_aprobacion_real", 0.0),
+                "clasicos": meta_clasico.get("metricas", {}),
+                "serie_temporal_hitos": meta_serie.get("metricas", {}),
+                "lstm_hitos": meta_lstm.get("metricas_por_hito", {}),
+                "serie_temporal_auc_h3": auc_gb_h3,
+                "lstm_auc_h3": auc_lstm_h3,
+                "random_forest_auc": auc_rf,
+            },
+            "mensaje": (
+                f"Modelos reentrenados en {duracion_seg}s usando "
+                f"{meta_clasico.get('total_muestras', 0)} registros de "
+                f"{meta_clasico.get('materia_dataset', materia_clean)}."
+            ),
+        }
 
 
 def _slugify(nombre: str) -> str:
@@ -119,6 +198,7 @@ def _cargar_modelos_materia(materia: str) -> Dict[str, Any]:
     if slug in _CACHE_MODELOS:
         return _CACHE_MODELOS[slug]
 
+    slug_efectivo = slug
     # 1. Buscar en saved_models interno
     folder = os.path.join(MODELS_DIR_PACKAGE, slug)
     if not os.path.exists(folder):
@@ -127,6 +207,7 @@ def _cargar_modelos_materia(materia: str) -> Dict[str, Any]:
 
     # 3. Si no existe, intentar fallback a estatica interna
     if not os.path.exists(folder):
+        slug_efectivo = "estatica"
         folder = os.path.join(MODELS_DIR_PACKAGE, "estatica")
         if not os.path.exists(folder):
             folder = os.path.join(MODELS_DIR_PARCIAL_1, "estatica")
@@ -135,12 +216,13 @@ def _cargar_modelos_materia(materia: str) -> Dict[str, Any]:
     if not os.path.exists(folder):
         from .trainer import entrenar_modelos_primer_parcial
         try:
-            entrenar_modelos_primer_parcial(materia)
-            folder = os.path.join(MODELS_DIR_PARCIAL_1, slug)
+            entrenar_modelos_primer_parcial(materia, salida_dir=MODELS_DIR_PACKAGE)
+            folder = os.path.join(MODELS_DIR_PACKAGE, slug)
+            slug_efectivo = slug
         except Exception:
-            slug = "estatica"
-            entrenar_modelos_primer_parcial("ESTATICA")
-            folder = os.path.join(MODELS_DIR_PARCIAL_1, slug)
+            slug_efectivo = "estatica"
+            entrenar_modelos_primer_parcial("ESTATICA", salida_dir=MODELS_DIR_PACKAGE)
+            folder = os.path.join(MODELS_DIR_PACKAGE, "estatica")
 
     lr_path = os.path.join(folder, "logistic_regression.joblib")
     scaler_path = os.path.join(folder, "scaler.joblib")
@@ -149,14 +231,20 @@ def _cargar_modelos_materia(materia: str) -> Dict[str, Any]:
 
     if not (os.path.exists(lr_path) and os.path.exists(dt_path) and os.path.exists(rf_path)):
         from .trainer import entrenar_modelos_primer_parcial
-        entrenar_modelos_primer_parcial(materia)
+        entrenar_modelos_primer_parcial(materia, salida_dir=MODELS_DIR_PACKAGE)
+        folder = os.path.join(MODELS_DIR_PACKAGE, slug)
+        slug_efectivo = slug
+        lr_path = os.path.join(folder, "logistic_regression.joblib")
+        scaler_path = os.path.join(folder, "scaler.joblib")
+        dt_path = os.path.join(folder, "decision_tree.joblib")
+        rf_path = os.path.join(folder, "random_forest.joblib")
 
     loaded = {
         "lr": joblib.load(lr_path),
         "scaler": joblib.load(scaler_path),
         "dt": joblib.load(dt_path),
         "rf": joblib.load(rf_path),
-        "slug": slug,
+        "slug": slug_efectivo,
     }
     _CACHE_MODELOS[slug] = loaded
     return loaded

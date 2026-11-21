@@ -6,6 +6,10 @@ import type {
 } from "../types/academic-history";
 import type { EstudianteSummary, NotaFinalData, InscripcionData } from "./scraper";
 import {
+  getCurrentAcademicPeriod,
+  inferCurrentPeriodFromParciales,
+} from "./period";
+import {
   historyStats as mockHistoryStats,
   academicRecords as mockAcademicRecords,
   curriculumBlocks as mockCurriculumBlocks,
@@ -115,7 +119,7 @@ function generarCodigoMateria(nombre: string, index: number): string {
  * Extrae el periodo lectivo a partir de la fecha de acta (DD/MM/AAAA o similar).
  */
 function inferirPeriodo(fechaStr?: string): string {
-  if (!fechaStr) return "2024-2";
+  if (!fechaStr) return getCurrentAcademicPeriod().code;
   const partes = fechaStr.split(/[/ -]/);
   if (partes.length >= 3) {
     const anho = partes.find((p) => p.length === 4) || partes[2];
@@ -198,6 +202,7 @@ export function buildHistoryData(
   });
 
   // 2. Mapeo de asignaturas en curso activas
+  const activePeriodCode = inferCurrentPeriodFromParciales(studentData.parciales);
   inscripciones.forEach((ins, idx) => {
     const nombreNorm = ins.asignatura.trim();
     const { dept, deptName } = inferirDepartamento(nombreNorm);
@@ -213,7 +218,7 @@ export function buildHistoryData(
       grade: null,
       opportunity: "Cursando Ciclo Actual",
       credits: 5,
-      period: "2024-2",
+      period: activePeriodCode,
       actaNumber: "En Proceso",
       status: "CURSO",
       prerequisites: ["Habilitación previa en sistema"],

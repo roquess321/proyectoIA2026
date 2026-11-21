@@ -2,8 +2,10 @@
 	import { onMount } from 'svelte';
 	import { academicState } from '../academic-state.svelte';
 	import { authState } from '../auth-state.svelte';
+	import { getCurrentAcademicPeriod } from '../services/period';
 
 	let dark = $state(false);
+	const currentPeriod = getCurrentAcademicPeriod();
 
 	function applyTheme(): void {
 		const html = document.documentElement;
@@ -54,7 +56,7 @@
 		<div class="hidden md:flex items-center gap-space-xs bg-surface-container-high px-space-sm py-1 rounded">
 			<span class="material-symbols-outlined text-primary text-base">calendar_month</span>
 			<span class="font-label-sm text-label-sm font-semibold text-on-surface">
-				Periodo 2024-2 (Segundo Ciclo)
+				{currentPeriod.label}
 			</span>
 		</div>
 

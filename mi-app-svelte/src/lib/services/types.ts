@@ -160,6 +160,8 @@ export interface MLModelMetricsEntry {
 export interface MLClassicMetadataItem {
 	materia?: string;
 	materia_slug?: string;
+	materia_dataset?: string;
+	fallback_global?: boolean;
 	parcial_origen?: string;
 	total_muestras?: number;
 	tasa_aprobacion_real?: number;
@@ -170,6 +172,8 @@ export interface MLClassicMetadataItem {
 export interface MLSeriesMetadataItem {
 	materia?: string;
 	slug?: string;
+	materia_dataset?: string;
+	fallback_global?: boolean;
 	tipo_modelo?: string;
 	total_registros_entrenamiento?: number;
 	metricas?: {
@@ -182,6 +186,8 @@ export interface MLSeriesMetadataItem {
 export interface MLLstmMetadataItem {
 	materia?: string;
 	slug?: string;
+	materia_dataset?: string;
+	fallback_global?: boolean;
 	tipo_arquitectura?: string;
 	total_estudiantes_entrenamiento?: number;
 	total_estudiantes_test?: number;
@@ -204,6 +210,23 @@ export interface MLModelsCatalogResponse {
 		estatico: string[];
 		serie_temporal: string[];
 	};
+}
+
+export interface MLRetrainResponse {
+	ok: boolean;
+	materia: string;
+	materia_slug: string;
+	materia_dataset: string;
+	fallback_global: boolean;
+	total_muestras: number;
+	duracion_seg: number;
+	metricas: {
+		clasicos?: Record<string, MLModelMetricsEntry>;
+		serie_temporal_auc_h3?: number;
+		lstm_auc_h3?: number;
+		random_forest_auc?: number;
+	};
+	mensaje: string;
 }
 
 export interface PredictionInput {

@@ -1,0 +1,34 @@
+{
+  "materia": "ELECTRONICA 1",
+  "slug": "electronica_1",
+  "materia_dataset": "ELECTRONICA 1 (61 únicos: 46S/15N) + Cohorte Carrera MCT",
+  "fallback_global": true,
+  "tipo_arquitectura": "Red Neuronal Recurrente LSTM (PyTorch)",
+  "hiperparametros": {
+    "input_size": 4,
+    "hidden_size": 32,
+    "num_layers": 2,
+    "dropout": 0.2,
+    "epochs": 40,
+    "learning_rate": 0.003,
+    "optimizer": "Adam"
+  },
+  "metricas_por_hito": {
+    "hito_1_primer_parcial": {
+      "auc_roc": 0.8782,
+      "longitud_secuencia": 1
+    },
+    "hito_2_tp_taller": {
+      "auc_roc": 0.8893,
+      "longitud_secuencia": 2
+    },
+    "hito_3_proceso_completo": {
+      "auc_roc": 0.8925,
+      "accuracy": 0.7736,
+      "f1_score": 0.8125,
+      "longitud_secuencia": 3
+    }
+  },
+  "total_estudiantes_entrenamiento": 315,
+  "total_estudiantes_test": 106
+}

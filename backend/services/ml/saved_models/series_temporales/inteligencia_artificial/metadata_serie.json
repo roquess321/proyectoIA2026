@@ -1,0 +1,36 @@
+{
+  "materia": "INTELIGENCIA ARTIFICIAL",
+  "slug": "inteligencia_artificial",
+  "materia_dataset": "INTELIGENCIA ARTIFICIAL (33 únicos: 18S/15N) + Cohorte FIUNA",
+  "fallback_global": true,
+  "tipo_modelo": "Serie Temporal Multi-Hito / Proceso Secuencial",
+  "metricas": {
+    "hito_1_primer_parcial": {
+      "auc_roc": 0.8442,
+      "variables": [
+        "Primer.Par"
+      ]
+    },
+    "hito_2_tp_taller": {
+      "auc_roc": 0.7818,
+      "variables": [
+        "Primer.Par",
+        "TPLab.",
+        "delta_tp_pp",
+        "avg_tp_pp"
+      ]
+    },
+    "hito_3_proceso_completo": {
+      "auc_roc": 0.8737,
+      "variables": [
+        "Primer.Par",
+        "Segundo.Par",
+        "TPLab.",
+        "delta_tp_pp",
+        "delta_sp_pp",
+        "promedio_proceso"
+      ]
+    }
+  },
+  "total_registros_entrenamiento": 393
+}

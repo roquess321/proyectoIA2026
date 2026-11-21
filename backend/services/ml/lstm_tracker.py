@@ -95,6 +95,13 @@ def _construir_secuencias_estudiante(df: pd.DataFrame) -> Tuple[list, list, list
     return seqs_1, seqs_2, seqs_3, labels
 
 
+def limpiar_cache_lstm(slug: Optional[str] = None) -> None:
+    if slug:
+        _CACHE_LSTM.pop(slug, None)
+    else:
+        _CACHE_LSTM.clear()
+
+
 def entrenar_modelo_lstm(
     materia: str = "ESTATICA",
     csv_path: str = CSV_PATH,
@@ -109,15 +116,26 @@ def entrenar_modelo_lstm(
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Dataset de entrenamiento no encontrado en: {csv_path}")
 
+    from .trainer import resolver_dataset_materia
+
     torch.manual_seed(42)
     np.random.seed(42)
 
-    df = pd.read_csv(csv_path, low_memory=False)
-    mask = df["Asignatura"].str.upper().str.contains(materia.upper(), na=False)
-    df_materia = df[mask].copy() if mask.sum() >= 50 else df.copy()
-
-    df_materia = df_materia.dropna(subset=["Aprobado"])
+    df_materia, materia_dataset, fallback_global = resolver_dataset_materia(
+        csv_path, materia_filtro=materia, min_muestras=50
+    )
     df_materia["target"] = (df_materia["Aprobado"].astype(str).str.upper() == "S").astype(float)
+
+    if len(df_materia) > 6000:
+        df_materia, _ = train_test_split(
+            df_materia,
+            train_size=6000,
+            random_state=42,
+            stratify=df_materia["target"],
+        )
+        df_materia = df_materia.copy()
+
+    effective_epochs = 28 if len(df_materia) > 3000 else epochs
 
     for col in ["Primer.Par", "Segundo.Par", "TPLab."]:
         df_materia[col] = pd.to_numeric(df_materia[col], errors="coerce").fillna(0)
@@ -150,7 +168,7 @@ def entrenar_modelo_lstm(
 
     # Ciclo de entrenamiento (Multi-Horizon Sequence Training)
     model.train()
-    for epoch in range(epochs):
+    for epoch in range(effective_epochs):
         # Paso en secuencias completas (Hito 3)
         optimizer.zero_grad()
         logits3, _ = model(X_tr3)
@@ -197,13 +215,15 @@ def entrenar_modelo_lstm(
     metadata = {
         "materia": materia.upper(),
         "slug": slug,
+        "materia_dataset": materia_dataset,
+        "fallback_global": fallback_global,
         "tipo_arquitectura": "Red Neuronal Recurrente LSTM (PyTorch)",
         "hiperparametros": {
             "input_size": 4,
             "hidden_size": 32,
             "num_layers": 2,
             "dropout": 0.2,
-            "epochs": epochs,
+            "epochs": effective_epochs,
             "learning_rate": lr,
             "optimizer": "Adam",
         },
@@ -230,6 +250,7 @@ def entrenar_modelo_lstm(
     with open(os.path.join(folder, "metadata_lstm.json"), "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 
+    limpiar_cache_lstm(slug)
     return metadata
 
 

@@ -222,5 +222,44 @@ class MLSequentialPredictResponse(BaseModel):
     comparativa_modelos: Optional[dict] = Field(None, description="Comparativa entre Ensamble Clásico (Gradient Boosting) y Red Neuronal Recurrente (LSTM)")
 
 
+class MLRetrainRequest(BaseModel):
+    materia: str = Field(..., min_length=2, description="Nombre de la asignatura para reentrenar los 5 modelos ML/LSTM")
+
+
+class MLRetrainResponse(BaseModel):
+    ok: bool
+    materia: str
+    materia_slug: str
+    materia_dataset: str
+    fallback_global: bool = False
+    total_muestras: int
+    duracion_seg: float
+    metricas: dict
+    mensaje: str
+
+
+class OfficialExamItem(BaseModel):
+    id: str
+    asignatura: str
+    instancia: str
+    fecha: str
+    month: str
+    day: str
+    title: str
+    subtitle: str
+    days_remaining: int
+    time: str
+    urgency: str
+
+
+class OfficialScheduleResponse(BaseModel):
+    source: str
+    periodo: Optional[str] = None
+    fuente: str
+    actualizado_en: Optional[str] = None
+    archivo: str
+    examenes: List[OfficialExamItem] = []
+
+
 
 
