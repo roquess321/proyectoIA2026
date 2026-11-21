@@ -1,18 +1,18 @@
 {
   "materia": "LENGUAJE DE PROGRAMACION VISUAL",
   "slug": "lenguaje_de_programacion_visual",
-  "materia_dataset": "LENGUAJE DE PROGRAMACION VISUAL",
-  "fallback_global": false,
+  "materia_dataset": "LENGUAJE DE PROGRAMACION VISUAL (19 únicos: 14S/5N) + Cohorte FIUNA",
+  "fallback_global": true,
   "tipo_modelo": "Serie Temporal Multi-Hito / Proceso Secuencial",
   "metricas": {
     "hito_1_primer_parcial": {
-      "auc_roc": 0.75,
+      "auc_roc": 0.814,
       "variables": [
         "Primer.Par"
       ]
     },
     "hito_2_tp_taller": {
-      "auc_roc": 0.875,
+      "auc_roc": 0.7316,
       "variables": [
         "Primer.Par",
         "TPLab.",
@@ -21,7 +21,7 @@
       ]
     },
     "hito_3_proceso_completo": {
-      "auc_roc": 0.6875,
+      "auc_roc": 0.8694,
       "variables": [
         "Primer.Par",
         "Segundo.Par",
@@ -32,5 +32,5 @@
       ]
     }
   },
-  "total_registros_entrenamiento": 74
+  "total_registros_entrenamiento": 379
 }

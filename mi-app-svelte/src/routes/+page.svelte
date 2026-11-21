@@ -744,12 +744,34 @@
             <div
                 class="bg-surface-container rounded-xl p-space-lg flex items-center gap-space-md shadow-sm border border-outline-variant/30"
             >
-                <div class="h-16 w-16 rounded-xl overflow-hidden shrink-0 shadow-inner">
+                <div class="h-16 w-16 rounded-xl overflow-hidden shrink-0 shadow-inner bg-brand-primary/10">
                     <img
                         class="w-full h-full object-cover"
                         alt="Detalle de placa de circuito electrónico universitario"
                         src="https://lh3.googleusercontent.com/aida-public/AB6AXuDB_ed-DwBNGaoP4tnasZLrMI7imLs3tvqV0AMYjo-ycWIECz0K655ZsUatGSItYPGS1-OJLntXbNKgjObEHauPgkdrhk8iWTvu3Vja4j492Do--TOitdpdzQ1bKlMwIwHEUtbLZdHEYch0lixj2a3M4o__llHaJVCfASAsexRpYBsgG3-FQEidyse3qDDkijYqXGty7SZjnEKlFw6nMh6yggwgLFVLVUAmDs69q7okedUnpa1jmbn2"
+                        onerror={(e) => {
+                            const img = e.currentTarget as HTMLImageElement;
+                            img.classList.add('hidden');
+                            img.nextElementSibling?.classList.remove('hidden');
+                            img.nextElementSibling?.classList.add('flex');
+                        }}
                     />
+                    <div
+                        class="hidden w-full h-full items-center justify-center bg-gradient-to-br from-brand-primary to-brand-secondary text-white"
+                        aria-hidden="true"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            class="h-7 w-7"
+                        >
+                            <rect x="6" y="6" width="12" height="12" rx="2" />
+                            <path d="M9 9h6v6H9zM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" />
+                        </svg>
+                    </div>
                 </div>
                 <div class="flex flex-col">
                     <span

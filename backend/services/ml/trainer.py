@@ -14,7 +14,9 @@ from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, reca
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROJECT_ROOT = os.path.dirname(BASE_DIR) if os.path.basename(BASE_DIR) == "backend" else BASE_DIR
 
-CSV_PATH = os.path.join(PROJECT_ROOT, "ejemplos_modelos_ingorar_github", "datos_concatenados.csv")
+_CSV_PATH_FULL = os.path.join(PROJECT_ROOT, "ejemplos_modelos_ingorar_github", "datos_concatenados.csv")
+CSV_PATH_COMPACT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dataset_fiuna_compact.csv")
+CSV_PATH = _CSV_PATH_FULL if os.path.exists(_CSV_PATH_FULL) else CSV_PATH_COMPACT
 MODELS_DIR_SAVED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_models")
 MODELS_DIR_PARCIAL_1 = os.path.join(PROJECT_ROOT, "ejemplos_modelos_ingorar_github", "modelos_primer_parcial")
 MODELS_DIR_PARCIAL_2 = os.path.join(PROJECT_ROOT, "ejemplos_modelos_ingorar_github", "modelos_segundo_parcial")
@@ -52,16 +54,21 @@ def resolver_dataset_materia(
     Retorna: (df_filtrado, nombre_dataset_resuelto, fallback_global).
     """
     if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"No se encontró el dataset en: {csv_path}")
+        if os.path.exists(CSV_PATH_COMPACT):
+            csv_path = CSV_PATH_COMPACT
+        else:
+            raise FileNotFoundError(f"No se encontró el dataset en: {csv_path}")
 
     df = pd.read_csv(csv_path, low_memory=False)
     df = df.dropna(subset=["Aprobado"]).copy()
     df["Aprobado"] = df["Aprobado"].astype(str).str.upper().str.strip()
     df = df[df["Aprobado"].isin(["S", "N"])].copy()
 
-    # 1. Deduplicación estricta ignorando ALUMNO_ID para eliminar clones entre Train y Test
-    cols_dedup = [c for c in df.columns if c != "ALUMNO_ID"]
-    df = df.drop_duplicates(subset=cols_dedup).copy()
+    # 1. Deduplicación estricta ignorando ALUMNO_ID para eliminar clones entre Train y Test.
+    # Si el dataset es el compacto (sin ALUMNO_ID), ya fue deduplicado sobre las columnas originales.
+    if "ALUMNO_ID" in df.columns:
+        cols_dedup = [c for c in df.columns if c != "ALUMNO_ID"]
+        df = df.drop_duplicates(subset=cols_dedup).copy()
 
     # 2. Conversión numérica y fusión de Lab. en TPLab. cuando TPLab. sea 0
     for col in ["Primer.Par", "Segundo.Par", "TPLab."]:

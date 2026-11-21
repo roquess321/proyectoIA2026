@@ -1,18 +1,18 @@
 {
   "materia": "Probabilidad y Estadística",
   "slug": "probabilidad_y_estadistica",
-  "materia_dataset": "PROBABILIDAD",
-  "fallback_global": false,
+  "materia_dataset": "PROBABILIDAD Y ESTADISTICA (5 únicos: 2S/3N) + Cohorte Carrera ELE",
+  "fallback_global": true,
   "tipo_modelo": "Serie Temporal Multi-Hito / Proceso Secuencial",
   "metricas": {
     "hito_1_primer_parcial": {
-      "auc_roc": 0.907,
+      "auc_roc": 0.7487,
       "variables": [
         "Primer.Par"
       ]
     },
     "hito_2_tp_taller": {
-      "auc_roc": 0.9006,
+      "auc_roc": 0.7929,
       "variables": [
         "Primer.Par",
         "TPLab.",
@@ -21,7 +21,7 @@
       ]
     },
     "hito_3_proceso_completo": {
-      "auc_roc": 0.957,
+      "auc_roc": 0.867,
       "variables": [
         "Primer.Par",
         "Segundo.Par",
@@ -32,5 +32,5 @@
       ]
     }
   },
-  "total_registros_entrenamiento": 1457
+  "total_registros_entrenamiento": 365
 }

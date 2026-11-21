@@ -51,8 +51,8 @@ export async function chat(
 		});
 	} catch (networkError) {
 		throw new Error(
-			'No se pudo conectar con el servidor backend FastAPI (http://localhost:8000). ' +
-			'Asegúrate de haber iniciado el backend con "uv run uvicorn backend.main:app --reload".'
+			`No se pudo conectar con el servidor backend (${API_BASE}). ` +
+				'Si el backend está alojado en la nube (Hugging Face Spaces), puede tardar unos segundos en despertar tras inactividad; en entorno local asegúrate de haber iniciado "uv run uvicorn backend.main:app --reload".'
 		);
 	}
 

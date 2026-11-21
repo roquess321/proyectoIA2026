@@ -1,0 +1,30 @@
+# Control de versiones y entornos locales
+.git/
+.venv/
+.agents/
+.vscode/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Secretos y bases de datos locales (las variables se configuran en HF Spaces)
+.env
+.env.*
+backend/.env
+backend/*.db
+backend/*.sqlite*
+
+# Frontend (se despliega por separado en Vercel)
+mi-app-svelte/
+
+# Datos crudos, material local ignorado y documentos
+data/*
+!data/horarios_oficiales/
+!data/horarios_oficiales/**
+ejemplos_modelos_ingorar_github/
+referencia_scraper_ignorar_github/
+defensa_ignorar_github/
+contexto_lenguajedeprogramacionvisual_ignorar_github/
+presentacion_defensa_v2.html
+*.md

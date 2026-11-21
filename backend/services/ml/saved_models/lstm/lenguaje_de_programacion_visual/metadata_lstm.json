@@ -1,8 +1,8 @@
 {
   "materia": "LENGUAJE DE PROGRAMACION VISUAL",
   "slug": "lenguaje_de_programacion_visual",
-  "materia_dataset": "LENGUAJE DE PROGRAMACION VISUAL",
-  "fallback_global": false,
+  "materia_dataset": "LENGUAJE DE PROGRAMACION VISUAL (19 únicos: 14S/5N) + Cohorte FIUNA",
+  "fallback_global": true,
   "tipo_arquitectura": "Red Neuronal Recurrente LSTM (PyTorch)",
   "hiperparametros": {
     "input_size": 4,
@@ -15,20 +15,20 @@
   },
   "metricas_por_hito": {
     "hito_1_primer_parcial": {
-      "auc_roc": 0.8125,
+      "auc_roc": 0.85,
       "longitud_secuencia": 1
     },
     "hito_2_tp_taller": {
-      "auc_roc": 0.6875,
+      "auc_roc": 0.8611,
       "longitud_secuencia": 2
     },
     "hito_3_proceso_completo": {
-      "auc_roc": 0.6875,
-      "accuracy": 0.6842,
-      "f1_score": 0.7692,
+      "auc_roc": 0.875,
+      "accuracy": 0.7895,
+      "f1_score": 0.8246,
       "longitud_secuencia": 3
     }
   },
-  "total_estudiantes_entrenamiento": 55,
-  "total_estudiantes_test": 19
+  "total_estudiantes_entrenamiento": 284,
+  "total_estudiantes_test": 95
 }

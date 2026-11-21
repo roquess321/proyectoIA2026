@@ -34,7 +34,19 @@
 					alt="Logo FIUNA"
 					class="h-8 w-auto object-contain"
 					src="https://lh3.googleusercontent.com/aida-public/AB6AXuAgGX46pke8o-mdRRDA6fE3WkBE8pLWh4817om4sZtv8HbVqQGjJrI4_iPczi1zobQJVmouon7naEvBB8O8iEWrA3GqWT4AYaSM7HWmKdpbYI6bz4HD_e9W7XpStl9IlGIW09HlyIMY8-FsvcCvVajov_363rqAt4Ke9V_XCreCuoL6GOnijz6K-QDetbvWwLyn79PoVVTdyraKj6daA-EEW9DqhaN-DWjrkdPl3yZrLYmc3Otpghbx"
+					onerror={(e) => {
+						const img = e.currentTarget as HTMLImageElement;
+						img.classList.add('hidden');
+						img.nextElementSibling?.classList.remove('hidden');
+						img.nextElementSibling?.classList.add('flex');
+					}}
 				/>
+				<div
+					class="hidden h-8 w-8 items-center justify-center rounded-lg bg-brand-primary text-xs font-bold tracking-tight text-white shadow-sm"
+					aria-hidden="true"
+				>
+					FI
+				</div>
 				<div class="flex flex-col">
 					<span
 						class="font-headline-sm text-headline-sm font-bold tracking-tight text-on-primary leading-none"

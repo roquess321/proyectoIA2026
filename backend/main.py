@@ -88,7 +88,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configuración CORS para permitir peticiones desde la app Svelte (puerto 5173 / 4173)
+# Configuración CORS para permitir peticiones desde SvelteKit local y Vercel/HF Spaces
+_cors_env = os.getenv("CORS_ORIGINS", "")
+_extra_origins = [origin.strip() for origin in _cors_env.split(",") if origin.strip()]
+_frontend_url = os.getenv("FRONTEND_URL", "").strip()
+if _frontend_url and _frontend_url not in _extra_origins:
+    _extra_origins.append(_frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -96,8 +102,9 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:4173",
         "http://127.0.0.1:4173",
-        "*",  # Permite pruebas locales abiertas
+        *_extra_origins,
     ],
+    allow_origin_regex=r"^https://([a-zA-Z0-9-]+\.)*(vercel\.app|hf\.space)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

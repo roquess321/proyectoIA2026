@@ -15,7 +15,7 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(os.path.dirname(CURRENT_DIR))
 PROJECT_ROOT = os.path.dirname(BASE_DIR) if os.path.basename(BASE_DIR) == "backend" else BASE_DIR
 
-CSV_PATH = os.path.join(PROJECT_ROOT, "ejemplos_modelos_ingorar_github", "datos_concatenados.csv")
+from .trainer import CSV_PATH, CSV_PATH_COMPACT
 MODELS_DIR_LSTM = os.path.join(CURRENT_DIR, "saved_models", "lstm")
 
 _CACHE_LSTM: Dict[str, Any] = {}

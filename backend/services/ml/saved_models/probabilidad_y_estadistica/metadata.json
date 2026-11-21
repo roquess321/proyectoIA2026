@@ -1,11 +1,11 @@
 {
   "materia": "Probabilidad y Estadística",
   "materia_slug": "probabilidad_y_estadistica",
-  "materia_dataset": "PROBABILIDAD",
-  "fallback_global": false,
+  "materia_dataset": "PROBABILIDAD Y ESTADISTICA (5 únicos: 2S/3N) + Cohorte Carrera ELE",
+  "fallback_global": true,
   "parcial_origen": "primer_parcial",
-  "total_muestras": 1457,
-  "tasa_aprobacion_real": 0.4832,
+  "total_muestras": 365,
+  "tasa_aprobacion_real": 0.5534,
   "variables": [
     "Primer.Par",
     "Segundo.Par",
@@ -13,25 +13,25 @@
   ],
   "metricas": {
     "regresion_logistica": {
-      "accuracy": 0.8744,
-      "auc_roc": 0.9223,
-      "precision": 0.8651,
-      "recall": 0.8774,
-      "f1": 0.8712
+      "accuracy": 0.8818,
+      "auc_roc": 0.9301,
+      "precision": 0.8871,
+      "recall": 0.9016,
+      "f1": 0.8943
     },
     "arbol_decision": {
-      "accuracy": 0.8676,
-      "auc_roc": 0.9336,
-      "precision": 0.8702,
-      "recall": 0.8538,
-      "f1": 0.8619
+      "accuracy": 0.8636,
+      "auc_roc": 0.8871,
+      "precision": 0.8594,
+      "recall": 0.9016,
+      "f1": 0.88
     },
     "random_forest": {
-      "accuracy": 0.8836,
-      "auc_roc": 0.9468,
-      "precision": 0.871,
-      "recall": 0.8915,
-      "f1": 0.8811
+      "accuracy": 0.8727,
+      "auc_roc": 0.916,
+      "precision": 0.8852,
+      "recall": 0.8852,
+      "f1": 0.8852
     }
   }
 }

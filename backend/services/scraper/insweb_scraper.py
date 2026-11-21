@@ -691,11 +691,17 @@ class INSWEBScraper:
                     "ficha": self.extraer_notas_parciales(page, on_progress=on_progress),
                 }
 
-                # Resguardar snapshot crudo en directorio data/
-                os.makedirs("data", exist_ok=True)
-                snapshot_file = os.path.join("data", f"insweb_raw_{cedula}.json")
-                with open(snapshot_file, "w", encoding="utf-8") as f:
-                    json.dump(datos, f, indent=2, ensure_ascii=False)
+                # Resguardar snapshot crudo en directorio data/ (best-effort para entornos cloud/efímeros)
+                try:
+                    data_dir = os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "data"
+                    )
+                    os.makedirs(data_dir, exist_ok=True)
+                    snapshot_file = os.path.join(data_dir, f"insweb_raw_{cedula}.json")
+                    with open(snapshot_file, "w", encoding="utf-8") as f:
+                        json.dump(datos, f, indent=2, ensure_ascii=False)
+                except Exception as snapshot_err:
+                    print(f"⚠️ No se pudo guardar snapshot crudo en disco: {snapshot_err}")
 
                 return datos
             finally:

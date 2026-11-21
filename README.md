@@ -1,3 +1,12 @@
+---
+title: Copiloto Academico FIUNA
+emoji: 🎓
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+---
+
 # 🎓 Copiloto Académico FIUNA — Plataforma Inteligente de Acompañamiento y Predicción
 
 Plataforma web interactiva desarrollada para estudiantes de la Facultad de Ingeniería de la Universidad Nacional de Asunción (**FIUNA**). Combina un portal de gestión académica, visualización de historial curricular, un simulador de notas, un **Agente Conversacional con Google Gemini** y **5 modelos de Machine Learning y Deep Learning** (clásicos y de series temporales) para estimar probabilidades de aprobación.
