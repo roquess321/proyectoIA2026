@@ -193,8 +193,7 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
         parciales = (
             db.query(Parcial)
             .filter(Parcial.cedula == clean_ci)
-            .order_by(Parcial.id.desc())
-            .limit(40)
+            .order_by(Parcial.periodo.desc(), Parcial.id.asc())
             .all()
         )
 
@@ -207,12 +206,31 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
 
         materias_en_curso = []
         for ins in inscripciones:
-            parciales_asig = [
+            ins_norm = ins.asignatura.strip().lower()
+            exact_matches = [
                 p for p in parciales
-                if p.asignatura.strip().lower() in ins.asignatura.strip().lower() or ins.asignatura.strip().lower() in p.asignatura.strip().lower()
+                if (p.asignatura or "").strip().lower() == ins_norm
             ]
+            candidatos = (
+                exact_matches
+                if exact_matches
+                else [
+                    p for p in parciales
+                    if (p_norm := (p.asignatura or "").strip().lower())
+                    and (p_norm in ins_norm or ins_norm in p_norm)
+                ]
+            )
+            latest_periodo = max(((p.periodo or "").strip() for p in candidatos), default="")
+            parciales_asig = (
+                [p for p in candidatos if (p.periodo or "").strip() == latest_periodo]
+                if latest_periodo
+                else candidatos
+            )
             evals_str = ", ".join([f"{p.tipo_examen}: {p.puntaje if p.puntaje is not None else 'Pendiente'}" for p in parciales_asig])
-            materias_en_curso.append(f"- {ins.asignatura} (Semestre {ins.semestre or 'N/A'}) -> {evals_str if evals_str else 'Sin evaluaciones cargadas aún'}")
+            periodo_tag = f", Periodo {latest_periodo}" if latest_periodo else ""
+            materias_en_curso.append(
+                f"- {ins.asignatura} (Semestre {ins.semestre or 'N/A'}{periodo_tag}) -> {evals_str if evals_str else 'Sin evaluaciones cargadas aún'}"
+            )
 
         student_context = (
             f"DATOS OFICIALES DEL ESTUDIANTE:\n"

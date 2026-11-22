@@ -68,13 +68,16 @@ def sanitizar_parciales(ficha_raw: Any) -> List[Dict[str, Any]]:
                         if isinstance(evaluaciones, list):
                             for ev in evaluaciones:
                                 if isinstance(ev, dict):
+                                    puntaje = _limpiar_puntaje(ev.get("puntaje"))
+                                    if puntaje is None:
+                                        puntaje = _limpiar_puntaje(ev.get("puntaje_preliminar"))
                                     parciales_limpios.append(
                                         {
                                             "asignatura": nombre_asig,
                                             "tipo_examen": _limpiar_texto(
                                                 ev.get("tipo_examen", "Parcial")
                                             ),
-                                            "puntaje": _limpiar_puntaje(ev.get("puntaje")),
+                                            "puntaje": puntaje,
                                             "periodo": _limpiar_texto(periodo),
                                         }
                                     )

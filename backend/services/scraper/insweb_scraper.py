@@ -423,12 +423,284 @@ class INSWEBScraper:
 
         return "||".join(sig_parts), materias_periodo
 
+    _EVAL_API_FIELDS: Tuple[Tuple[str, str], ...] = (
+        ("pp", "Primer Parcial"),
+        ("sp", "Segundo Parcial"),
+        ("tp", "Tercer Parcial"),
+        ("cp", "Cuarto Parcial"),
+        ("aot", "Trabajo Práctico / Taller / Otros"),
+        ("prf", "Primer Recuperatorio"),
+        ("srf", "Segundo Recuperatorio"),
+        ("trf", "Tercer Recuperatorio"),
+        ("lab", "Laboratorio"),
+        ("proy", "Proyecto"),
+        ("prfc", "Primer Recuperatorio Final"),
+        ("srfc", "Segundo Recuperatorio Final"),
+        ("trfc", "Tercer Recuperatorio Final"),
+    )
+
+    @staticmethod
+    def _parse_float_or_none(val: Any) -> Optional[float]:
+        if val is None or isinstance(val, bool):
+            return None
+        txt = str(val).strip().replace(",", ".")
+        if not txt:
+            return None
+        try:
+            return float(txt)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _parse_kv_metric(blob: Optional[str], key: str) -> Optional[str]:
+        if not blob:
+            return None
+        match = re.search(rf"(?:^|,)\s*{re.escape(key)}=([^,]+)", str(blob))
+        return match.group(1).strip() if match else None
+
+    def _extraer_parciales_via_api(
+        self,
+        page: Any,
+        on_progress: ProgressCallback = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Consulta directamente los endpoints JSON autenticados de INSWEB por año y convocatoria."""
+        req = getattr(page.context, "request", None)
+        if req is None:
+            return None
+
+        api_base = "https://insweb.ing.una.py/insweb-backend"
+        cfg_anho = datetime.datetime.now().year
+        cfg_sem = 2
+        anho_min = self.ANHO_MINIMO
+
+        try:
+            r_cfg = req.get(f"{api_base}/exafinalconfig/1", timeout=8000)
+            if r_cfg.ok:
+                cfg_data = r_cfg.json()
+                if isinstance(cfg_data, dict):
+                    if str(cfg_data.get("anho", "")).isdigit():
+                        cfg_anho = int(cfg_data["anho"])
+                    if str(cfg_data.get("semestre", "")).isdigit():
+                        cfg_sem = int(cfg_data["semestre"])
+        except Exception:
+            pass
+
+        try:
+            r_perf = req.get(f"{api_base}/ver_perfil", timeout=8000)
+            if r_perf.ok:
+                perf_data = r_perf.json()
+                if isinstance(perf_data, dict) and str(perf_data.get("anhoingreso", "")).isdigit():
+                    ingreso = int(perf_data["anhoingreso"])
+                    anho_min = max(2015, min(self.ANHO_MINIMO, ingreso))
+        except Exception:
+            pass
+
+        anho_inicio = max(cfg_anho, datetime.datetime.now().year)
+        convocatoria_inicio = 2
+
+        self._emit(
+            on_progress,
+            step="calificaciones",
+            step_status="running",
+            progress=56,
+            message=(
+                f"🔄 [Scraper] Config INSWEB: {cfg_anho}_C{cfg_sem}. "
+                f"Consultando historial de parciales desde {anho_inicio}_C{convocatoria_inicio} hasta {anho_min}_C1..."
+            ),
+        )
+
+        periodos: List[Tuple[int, int]] = []
+        a, c = anho_inicio, convocatoria_inicio
+        while a >= anho_min:
+            periodos.append((a, c))
+            if c == 2:
+                c = 1
+            else:
+                c = 2
+                a -= 1
+
+        resultados: Dict[str, Any] = {}
+        total_periodos = max(1, len(periodos))
+
+        for iter_idx, (anho, conv) in enumerate(periodos):
+            clave_periodo = f"{anho}_C{conv}"
+            prog = min(88, 56 + int((iter_idx / total_periodos) * 32))
+
+            try:
+                r_par = req.get(
+                    f"{api_base}/notas_parciales/?anho={anho}&convocatoria={conv}",
+                    timeout=10000,
+                )
+                r_pre = req.get(
+                    f"{api_base}/notas_preliminares/?anho={anho}&convocatoria={conv}",
+                    timeout=10000,
+                )
+                if r_par.status != 200 or r_pre.status != 200:
+                    if iter_idx == 0:
+                        return None
+                    self._emit(
+                        on_progress,
+                        step="calificaciones",
+                        step_status="running",
+                        progress=prog,
+                        message=(
+                            f"⚠️ [Scraper] Periodo {clave_periodo} respondió HTTP "
+                            f"{r_par.status}/{r_pre.status}; omitido."
+                        ),
+                    )
+                    continue
+
+                par_json = r_par.json()
+                pre_json = r_pre.json()
+                if not isinstance(par_json, list) or not isinstance(pre_json, list):
+                    if iter_idx == 0:
+                        return None
+                    continue
+            except Exception as exc_api:
+                if iter_idx == 0:
+                    self._emit(
+                        on_progress,
+                        step="calificaciones",
+                        step_status="running",
+                        progress=57,
+                        message=f"⚠️ [Scraper] API directa no disponible ({exc_api}); usando modo DOM...",
+                    )
+                    return None
+                self._emit(
+                    on_progress,
+                    step="calificaciones",
+                    step_status="running",
+                    progress=prog,
+                    message=f"⚠️ [Scraper] Error consultando {clave_periodo}: {exc_api}",
+                )
+                continue
+
+            combined: Dict[str, Dict[str, Any]] = {}
+            ordered_keys: List[str] = []
+
+            def _ensure_entry(raw_row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+                cod = str(raw_row.get("codasign") or "").strip()
+                desc = str(raw_row.get("descrip") or "").strip()
+                key = cod if cod else desc.upper()
+                if not key:
+                    return None
+                if key not in combined:
+                    combined[key] = {
+                        "asignatura": desc or cod,
+                        "codigo": cod or "N/A",
+                        "parcial": None,
+                        "prelim": None,
+                    }
+                    ordered_keys.append(key)
+                else:
+                    if desc and combined[key]["asignatura"] == combined[key]["codigo"]:
+                        combined[key]["asignatura"] = desc
+                return combined[key]
+
+            for row in par_json:
+                if isinstance(row, dict):
+                    entry = _ensure_entry(row)
+                    if entry is not None:
+                        entry["parcial"] = row
+
+            for row in pre_json:
+                if isinstance(row, dict):
+                    entry = _ensure_entry(row)
+                    if entry is not None:
+                        entry["prelim"] = row
+
+            materias_periodo: List[Dict[str, Any]] = []
+            for key in ordered_keys:
+                entry = combined[key]
+                par_row = entry["parcial"] or {}
+                pre_row = entry["prelim"] or {}
+
+                evaluaciones: List[Dict[str, Any]] = []
+                for field_key, tipo_label in self._EVAL_API_FIELDS:
+                    par_val = par_row.get(field_key)
+                    pre_val = pre_row.get(field_key)
+                    pre_str = str(pre_val).strip() if pre_val is not None else ""
+                    if par_val is None and not pre_str:
+                        continue
+
+                    evaluaciones.append(
+                        {
+                            "tipo_examen": tipo_label,
+                            "puntaje": self._parse_float_or_none(par_val),
+                            "puntaje_preliminar": pre_str,
+                        }
+                    )
+
+                prom_blob = pre_row.get("promedio")
+                recu_blob = pre_row.get("promedio_conrecu")
+                promedio_ponderado = self._parse_float_or_none(
+                    self._parse_kv_metric(prom_blob, "SUMATOTAL")
+                )
+                derecho_raw = self._parse_kv_metric(prom_blob, "DERECHO")
+                derecho: Optional[bool] = (
+                    derecho_raw.upper() == "S" if derecho_raw in ("S", "N", "s", "n") else None
+                )
+
+                recu_val = self._parse_float_or_none(
+                    self._parse_kv_metric(recu_blob, "SUMARECU")
+                )
+                has_recu_ev = any(
+                    (
+                        par_row.get(rk) is not None
+                        or (pre_row.get(rk) is not None and str(pre_row.get(rk)).strip() != "")
+                    )
+                    for rk in ("prf", "srf", "trf", "prfc", "srfc", "trfc")
+                )
+                promedio_recuperatorio: Optional[float] = (
+                    recu_val
+                    if recu_val is not None
+                    and recu_val > 0
+                    and (bool(pre_row.get("tienederechorecu")) or has_recu_ev)
+                    else None
+                )
+
+                materias_periodo.append(
+                    {
+                        "asignatura": entry["asignatura"],
+                        "codigo": entry["codigo"],
+                        "evaluaciones": evaluaciones,
+                        "promedio_ponderado": promedio_ponderado,
+                        "promedio_recuperatorio": promedio_recuperatorio,
+                        "derecho": derecho,
+                    }
+                )
+
+            if materias_periodo:
+                resultados[clave_periodo] = materias_periodo
+                msg_periodo = f"   ↳ [Scraper] Periodo {clave_periodo}: {len(materias_periodo)} materias recuperadas."
+            else:
+                msg_periodo = f"   ↳ [Scraper] Periodo {clave_periodo}: sin evaluaciones registradas."
+
+            self._emit(
+                on_progress,
+                step="calificaciones",
+                step_status="running",
+                progress=prog,
+                message=msg_periodo,
+                meta={"periodo": clave_periodo, "materias": len(materias_periodo)},
+            )
+
+        self._emit(
+            on_progress,
+            step="calificaciones",
+            step_status="done",
+            progress=90,
+            message=f"✅ [Scraper] Extracción histórica completada ({len(resultados)} periodos con parciales).",
+            meta={"periodos": len(resultados)},
+        )
+        return resultados
+
     def extraer_notas_parciales(
         self,
         page: Any,
         on_progress: ProgressCallback = None,
     ) -> Dict[str, Any]:
-        """Extrae el desglose de evaluaciones parciales navegando hacia periodos anteriores."""
+        """Extrae el desglose de evaluaciones parciales (API directa con fallback a DOM)."""
         self._emit(
             on_progress,
             step="calificaciones",
@@ -436,6 +708,13 @@ class INSWEBScraper:
             progress=55,
             message="🔍 [Scraper] [3/3] Extrayendo notas parciales por periodo...",
         )
+
+        # Vía rápida y atómica contra la API autenticada de INSWEB
+        api_resultados = self._extraer_parciales_via_api(page, on_progress=on_progress)
+        if api_resultados is not None:
+            return api_resultados
+
+        # Fallback DOM en caso de cambio o indisponibilidad del endpoint directo
         try:
             menu_notas = (
                 page.locator("a, button, mat-list-item")
@@ -514,7 +793,7 @@ class INSWEBScraper:
             progress=56,
             message=(
                 f"🔄 [Scraper] Periodo por defecto en InsWeb: {anho_defecto}_C{convocatoria_defecto}. "
-                f"Iniciando barrido desde {anho_inicio}_C{convocatoria_inicio}..."
+                f"Iniciando barrido DOM desde {anho_inicio}_C{convocatoria_inicio}..."
             ),
         )
 
@@ -533,33 +812,25 @@ class INSWEBScraper:
                 cur_a = input_anho.input_value().strip()
                 anho_cambiado = cur_a != str(a)
 
-                # Rellenar ambos inputs antes de disparar eventos para evitar llamadas Angular solapadas
+                # Rellenar inputs y emitir cambio único con blur para evitar XHR solapados
                 if anho_cambiado:
-                    input_anho.click()
                     input_anho.fill(str(a))
-
-                input_convocatoria.click()
-                input_convocatoria.fill(str(c))
-
-                if anho_cambiado:
-                    input_anho.dispatch_event("input")
                     input_anho.dispatch_event("change")
 
-                input_convocatoria.dispatch_event("input")
+                input_convocatoria.fill(str(c))
                 input_convocatoria.dispatch_event("change")
-                input_convocatoria.press("Enter")
-                input_convocatoria.press("Tab")
+                input_convocatoria.evaluate("el => el.blur()")
 
                 try:
-                    page.wait_for_load_state("networkidle", timeout=3500)
+                    page.wait_for_load_state("networkidle", timeout=4000)
                 except Exception:
                     pass
 
-                # Polling corto hasta que el DOM cambie respecto a prev_signature y se estabilice
-                last_sig = ""
+                # No abortar por DOM vacío transitorio mientras Angular carga las tarjetas
+                last_sig: Optional[str] = None
                 stable_count = 0
                 changed = False
-                for step_idx in range(8):
+                for step_idx in range(10):
                     time.sleep(0.3)
                     try:
                         sig_now, _ = self._leer_cards_periodo(page)
@@ -572,7 +843,7 @@ class INSWEBScraper:
                     else:
                         stable_count = 0
                         last_sig = sig_now
-                    if changed and stable_count >= 1:
+                    if changed and stable_count >= 1 and (sig_now != "" or step_idx >= 4):
                         break
                     if not changed and step_idx >= 4 and stable_count >= 2:
                         break

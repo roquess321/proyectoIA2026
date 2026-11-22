@@ -66,6 +66,45 @@ function normalizeForComparison(str: string): string {
 }
 
 /**
+ * Selecciona los parciales del periodo más reciente para una asignatura normalizada.
+ */
+function getLatestPeriodParciales(
+  parciales: ParcialData[],
+  normName: string,
+): ParcialData[] {
+  if (!normName) return [];
+
+  const exact = parciales.filter(
+    (p) => normalizeForComparison(p.asignatura) === normName,
+  );
+  const candidates =
+    exact.length > 0
+      ? exact
+      : parciales.filter((p) => {
+          const normP = normalizeForComparison(p.asignatura);
+          return (
+            normP.length > 0 &&
+            (normP.includes(normName) || normName.includes(normP))
+          );
+        });
+
+  if (candidates.length === 0) return [];
+
+  const periods = Array.from(
+    new Set(
+      candidates
+        .map((p) => p.periodo?.trim() || "")
+        .filter((per) => per.length > 0),
+    ),
+  ).sort((a, b) => b.localeCompare(a));
+
+  if (periods.length === 0) return candidates;
+
+  const latestPeriod = periods[0];
+  return candidates.filter((p) => (p.periodo?.trim() || "") === latestPeriod);
+}
+
+/**
  * Transforma los datos reales extraídos por el scraper en estructuras completas para el Dashboard.
  */
 export function buildDashboardData(
@@ -156,11 +195,8 @@ export function buildDashboardData(
     const cleanName = cleanAcademicText(ins.asignatura);
     const normName = normalizeForComparison(cleanName);
 
-    // Buscar parciales que pertenezcan a esta asignatura
-    const matchParciales = parciales.filter((p) => {
-      const normP = normalizeForComparison(p.asignatura);
-      return normP.includes(normName) || normName.includes(normP);
-    });
+    // Buscar parciales del periodo más reciente que pertenezcan a esta asignatura
+    const matchParciales = getLatestPeriodParciales(parciales, normName);
 
     // Construir desglose de calificaciones
     const grades: CourseGrade[] = [];
