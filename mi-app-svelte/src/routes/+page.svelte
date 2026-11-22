@@ -7,6 +7,7 @@
         loginLocalUser,
         registerLocalUser,
         linkInswebAccountStream,
+        deleteUserData,
         type LinkInswebResult
     } from "../lib/services/auth";
 
@@ -51,6 +52,13 @@
     let syncError = $state<string | null>(null);
     let syncDetails = $state<LinkInswebResult | null>(null);
 
+    // Eliminación permanente de datos de usuario (privacidad)
+    let showDeletePanel = $state(false);
+    let deletePassword = $state("");
+    let isDeletingData = $state(false);
+    let deleteError = $state<string | null>(null);
+    let deleteSuccessMsg = $state<string | null>(null);
+
     const carrerasDisponibles = [
         "Ingeniería Electromecánica",
         "Ingeniería Civil",
@@ -65,6 +73,7 @@
         if (isLoggingIn) return;
 
         loginError = null;
+        deleteSuccessMsg = null;
         if (!loginIdentifier.trim() || !loginPassword) {
             loginError = "Por favor ingresa tu identificador (usuario o cédula) y contraseña.";
             return;
@@ -106,6 +115,7 @@
         if (isRegistering) return;
 
         registerError = null;
+        deleteSuccessMsg = null;
 
         const cleanCedula = regCedula.replace(/[^0-9]/g, "");
         if (!regNombre.trim() || !regUsuario.trim() || !cleanCedula || !regPassword) {
@@ -205,6 +215,49 @@
         academicState.activeNav = "dashboard";
         goto("/dashboard");
     }
+
+    async function handleDeleteAllData(event: SubmitEvent): Promise<void> {
+        event.preventDefault();
+        if (isDeletingData || !authState.user) return;
+
+        deleteError = null;
+        if (!deletePassword) {
+            deleteError = "Ingresa tu contraseña local para confirmar la eliminación permanente.";
+            return;
+        }
+
+        const currentCedula = authState.user.cedula;
+        isDeletingData = true;
+        try {
+            const res = await deleteUserData({
+                usuario: authState.user.usuario,
+                cedula: currentCedula,
+                password: deletePassword,
+                eliminar_cuenta: true
+            });
+
+            deletePassword = "";
+            showDeletePanel = false;
+            syncSuccess = false;
+            syncDetails = null;
+            syncError = null;
+            authState.logout();
+
+            if (typeof window !== "undefined") {
+                window.localStorage.removeItem("fiuna_chat_session_id");
+            }
+
+            deleteSuccessMsg =
+                `${res.message} ` +
+                `(${res.inscripciones_deleted} inscripciones, ${res.parciales_deleted} parciales, ${res.notas_deleted} notas finales` +
+                `${res.snapshot_deleted ? ", snapshot JSON borrado" : ""}).`;
+            void academicState.forceRescrape(null);
+        } catch (err: unknown) {
+            deleteError = err instanceof Error ? err.message : "Error al eliminar tus datos.";
+        } finally {
+            isDeletingData = false;
+        }
+    }
 </script>
 
 <svelte:head>
@@ -294,6 +347,13 @@
                                 Paso 1: Autenticación
                             </span>
                         </div>
+
+                        {#if deleteSuccessMsg}
+                            <div class="p-space-md rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 font-body-sm text-body-sm flex items-start gap-space-xs">
+                                <span class="material-symbols-outlined text-base mt-0.5">verified</span>
+                                <span class="flex-1">{deleteSuccessMsg}</span>
+                            </div>
+                        {/if}
 
                         <!-- Selector de Pestañas -->
                         <div class="grid grid-cols-2 p-1 bg-surface-container-low rounded-xl">
@@ -723,6 +783,85 @@
                                     </div>
                                 {/if}
                             </form>
+                        </div>
+
+                        <!-- Control de Privacidad y Eliminación de Datos -->
+                        <div class="bg-surface-container-low rounded-xl p-space-lg flex flex-col gap-space-md border border-error/25">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+                                <div class="flex flex-col gap-0.5">
+                                    <div class="flex items-center gap-space-xs text-error font-label-md text-label-md font-bold">
+                                        <span class="material-symbols-outlined text-lg">delete_forever</span>
+                                        <span>Privacidad y Eliminación de Datos</span>
+                                    </div>
+                                    <p class="font-body-sm text-body-sm text-on-surface-variant">
+                                        Elimina de forma definitiva tus inscripciones, parciales, notas finales, snapshot crudo y cuenta local para C.I. <strong>{user.cedula}</strong>.
+                                    </p>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    class="py-2 px-space-md rounded-lg border border-error/40 text-error hover:bg-error hover:text-white font-label-sm text-label-sm font-semibold flex items-center gap-1.5 self-start sm:self-center shrink-0 transition-colors cursor-pointer"
+                                    onclick={() => {
+                                        showDeletePanel = !showDeletePanel;
+                                        deleteError = null;
+                                        deletePassword = "";
+                                    }}
+                                >
+                                    <span class="material-symbols-outlined text-base">
+                                        {showDeletePanel ? "close" : "delete_sweep"}
+                                    </span>
+                                    <span>{showDeletePanel ? "Cancelar" : "Eliminar Todos Mis Datos"}</span>
+                                </button>
+                            </div>
+
+                            {#if showDeletePanel}
+                                <form
+                                    class="p-space-md rounded-lg bg-error/5 border border-error/25 flex flex-col gap-space-sm"
+                                    onsubmit={handleDeleteAllData}
+                                >
+                                    <p class="font-body-sm text-body-sm text-on-surface">
+                                        Esta acción es irreversible y cerrará tu sesión actual. Se borrarán de SQLite y del disco:
+                                        <strong>inscripciones, evaluaciones parciales, actas de notas finales, tu cuenta local</strong> y cualquier snapshot <code class="text-xs">insweb_raw_{user.cedula}.json</code>.
+                                    </p>
+
+                                    <div class="flex flex-col sm:flex-row gap-space-sm items-stretch sm:items-end">
+                                        <div class="flex-1 flex flex-col gap-space-xs">
+                                            <label class="font-label-sm text-label-sm text-on-surface font-semibold" for="delete-password">
+                                                Confirma con tu contraseña local
+                                            </label>
+                                            <input
+                                                class="w-full bg-surface-container-lowest text-on-surface font-body-md text-body-md px-3 py-2 rounded-lg border border-error/30 focus:border-error focus:outline-none"
+                                                id="delete-password"
+                                                placeholder="Tu contraseña actual de Copiloto FIUNA"
+                                                required
+                                                type="password"
+                                                bind:value={deletePassword}
+                                            />
+                                        </div>
+
+                                        <button
+                                            type="submit"
+                                            disabled={isDeletingData}
+                                            class="py-2.5 px-space-md bg-error hover:opacity-90 text-white rounded-lg font-label-sm text-label-sm uppercase tracking-wider font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-60"
+                                        >
+                                            {#if isDeletingData}
+                                                <span class="material-symbols-outlined text-base animate-spin">autorenew</span>
+                                                <span>Eliminando...</span>
+                                            {:else}
+                                                <span class="material-symbols-outlined text-base">delete_forever</span>
+                                                <span>Confirmar Eliminación</span>
+                                            {/if}
+                                        </button>
+                                    </div>
+
+                                    {#if deleteError}
+                                        <div class="p-space-xs rounded bg-error/15 text-error font-body-sm text-body-sm flex items-center gap-space-xs">
+                                            <span class="material-symbols-outlined text-base">error</span>
+                                            <span>{deleteError}</span>
+                                        </div>
+                                    {/if}
+                                </form>
+                            {/if}
                         </div>
                     </div>
                 {/if}

@@ -2,6 +2,7 @@ import asyncio
 import importlib.util
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -54,6 +55,8 @@ from backend.schemas import (
     UserLoginRequest,
     UserResponse,
     LinkInswebRequest,
+    DeleteUserDataRequest,
+    DeleteUserDataResponse,
     MLPredictRequest,
     MLPredictResponse,
     MLSequentialPredictRequest,
@@ -552,9 +555,15 @@ def login_estudiante(request: LoginRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED, tags=["Autenticación Local"])
 def registrar_usuario(request: UserRegisterRequest, db: Session = Depends(get_db)):
-    """Crea una nueva cuenta de usuario local con contraseña hasheada y vinculada por Cédula."""
+    """Crea una nueva cuenta de usuario local con contraseña hasheada y vinculada por Cédula única."""
     clean_username = request.usuario.strip().lower()
-    clean_ci = request.cedula.strip().replace(".", "")
+    clean_ci = re.sub(r"[^0-9]", "", request.cedula)
+
+    if len(clean_ci) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La Cédula de Identidad debe contener al menos 3 dígitos.",
+        )
 
     # Verificar si el nombre de usuario ya está tomado
     existe = db.query(UsuarioLocal).filter(UsuarioLocal.usuario == clean_username).first()
@@ -562,6 +571,17 @@ def registrar_usuario(request: UserRegisterRequest, db: Session = Depends(get_db
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"El nombre de usuario '{clean_username}' ya está registrado.",
+        )
+
+    # Verificar unicidad por Cédula de Identidad para impedir doble cuenta por persona
+    existe_cedula = db.query(UsuarioLocal).filter(UsuarioLocal.cedula == clean_ci).first()
+    if existe_cedula:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"La Cédula de Identidad '{clean_ci}' ya tiene una cuenta registrada. "
+                "Inicia sesión con tu cuenta existente en lugar de crear otra."
+            ),
         )
 
     # Asegurar que el registro de estudiante existe para enlazar la ForeignKey
@@ -601,14 +621,22 @@ def registrar_usuario(request: UserRegisterRequest, db: Session = Depends(get_db
 def login_local(request: UserLoginRequest, db: Session = Depends(get_db)):
     """Inicia sesión con cuenta local verificando credenciales hasheadas."""
     ident = request.identificador.strip().lower()
-    ident_ci = request.identificador.strip().replace(".", "")
+    ident_ci = re.sub(r"[^0-9]", "", request.identificador)
 
-    # Buscar por usuario o por cédula
-    usuario = db.query(UsuarioLocal).filter(
-        (UsuarioLocal.usuario == ident) | (UsuarioLocal.cedula == ident_ci)
-    ).first()
+    # Buscar primero por nombre de usuario único
+    usuario = db.query(UsuarioLocal).filter(UsuarioLocal.usuario == ident).first()
+    if usuario and not verify_password(request.password, usuario.password_hash):
+        usuario = None
 
-    if not usuario or not verify_password(request.password, usuario.password_hash):
+    # Si no coincidió por usuario y el identificador contiene dígitos de C.I., buscar entre cuentas con esa cédula
+    if not usuario and ident_ci:
+        candidatos = db.query(UsuarioLocal).filter(UsuarioLocal.cedula == ident_ci).all()
+        for candidato in candidatos:
+            if verify_password(request.password, candidato.password_hash):
+                usuario = candidato
+                break
+
+    if not usuario:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales incorrectas. Verifica tu usuario o contraseña.",
@@ -663,6 +691,85 @@ def link_insweb(request: LinkInswebRequest, db: Session = Depends(get_db)):
         )
     finally:
         _dec_scraper_jobs()
+
+
+@app.post("/api/auth/delete-data", response_model=DeleteUserDataResponse, tags=["Autenticación Local"])
+def eliminar_datos_usuario(request: DeleteUserDataRequest, db: Session = Depends(get_db)):
+    """Elimina todos los datos académicos, snapshot JSON y opcionalmente la cuenta local tras validar contraseña."""
+    clean_ci = re.sub(r"[^0-9]", "", request.cedula)
+    if len(clean_ci) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La Cédula de Identidad debe contener al menos 3 dígitos.",
+        )
+
+    usuario_valido: Optional[UsuarioLocal] = None
+    if request.usuario and request.usuario.strip():
+        clean_user = request.usuario.strip().lower()
+        candidato = db.query(UsuarioLocal).filter(UsuarioLocal.usuario == clean_user).first()
+        if (
+            candidato
+            and candidato.cedula == clean_ci
+            and verify_password(request.password, candidato.password_hash)
+        ):
+            usuario_valido = candidato
+    else:
+        candidatos = db.query(UsuarioLocal).filter(UsuarioLocal.cedula == clean_ci).all()
+        for candidato in candidatos:
+            if verify_password(request.password, candidato.password_hash):
+                usuario_valido = candidato
+                break
+
+    if not usuario_valido:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Contraseña incorrecta. No se eliminaron los datos.",
+        )
+
+    inscripciones_deleted = (
+        db.query(Inscripcion).filter(Inscripcion.cedula == clean_ci).delete(synchronize_session=False)
+    )
+    parciales_deleted = (
+        db.query(Parcial).filter(Parcial.cedula == clean_ci).delete(synchronize_session=False)
+    )
+    notas_deleted = (
+        db.query(NotaFinal).filter(NotaFinal.cedula == clean_ci).delete(synchronize_session=False)
+    )
+    db.query(Estudiante).filter(Estudiante.cedula == clean_ci).delete(synchronize_session=False)
+
+    account_deleted = False
+    if request.eliminar_cuenta:
+        db.delete(usuario_valido)
+        account_deleted = True
+
+    db.commit()
+
+    snapshot_deleted = False
+    for snap_path in {
+        (_project_root / "data" / f"insweb_raw_{clean_ci}.json").resolve(),
+        (Path("data") / f"insweb_raw_{clean_ci}.json").resolve(),
+    }:
+        if snap_path.is_file():
+            try:
+                snap_path.unlink()
+                snapshot_deleted = True
+            except OSError:
+                pass
+
+    return DeleteUserDataResponse(
+        ok=True,
+        cedula=clean_ci,
+        inscripciones_deleted=inscripciones_deleted,
+        parciales_deleted=parciales_deleted,
+        notas_deleted=notas_deleted,
+        account_deleted=account_deleted,
+        snapshot_deleted=snapshot_deleted,
+        message=(
+            f"Todos tus datos académicos para C.I. {clean_ci} "
+            f"({'y tu cuenta local ' if account_deleted else ''}"
+            "fueron eliminados definitivamente)."
+        ),
+    )
 
 
 @app.post("/api/auth/link-insweb/stream", tags=["Autenticación Local"])

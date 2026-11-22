@@ -164,6 +164,24 @@ class LinkInswebRequest(BaseModel):
     pin: str = Field(..., min_length=1, description="PIN de acceso a INSWEB")
 
 
+class DeleteUserDataRequest(BaseModel):
+    usuario: Optional[str] = Field(None, description="Nombre de usuario local autenticado")
+    cedula: str = Field(..., min_length=3, max_length=30, description="Cédula de Identidad a eliminar")
+    password: str = Field(..., min_length=1, description="Contraseña local para confirmar identidad")
+    eliminar_cuenta: bool = Field(True, description="Si es True, elimina también la cuenta local de acceso")
+
+
+class DeleteUserDataResponse(BaseModel):
+    ok: bool
+    cedula: str
+    inscripciones_deleted: int
+    parciales_deleted: int
+    notas_deleted: int
+    account_deleted: bool
+    snapshot_deleted: bool
+    message: str
+
+
 # Modelos para Predicción de Machine Learning (1er y 2do Parcial)
 class MLPredictRequest(BaseModel):
     materia: str = Field("ESTATICA", description="Nombre o patrón de la asignatura a predecir")

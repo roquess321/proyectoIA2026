@@ -96,7 +96,7 @@ class UsuarioLocal(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     usuario = Column(String(50), unique=True, nullable=False, index=True)
     password_hash = Column(String(128), nullable=False)
-    cedula = Column(String(30), ForeignKey("estudiantes.cedula", ondelete="SET NULL"), nullable=True, index=True)
+    cedula = Column(String(30), ForeignKey("estudiantes.cedula", ondelete="SET NULL"), unique=True, nullable=True, index=True)
     nombre = Column(String(100), nullable=False)
     carrera = Column(String(100), default="Ingeniería")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

@@ -194,3 +194,45 @@ export async function linkInswebAccountStream(
 
   return finalResult;
 }
+
+export interface DeleteUserDataParams {
+  usuario?: string;
+  cedula: string;
+  password: string;
+  eliminar_cuenta?: boolean;
+}
+
+export interface DeleteUserDataResult {
+  ok: boolean;
+  cedula: string;
+  inscripciones_deleted: number;
+  parciales_deleted: number;
+  notas_deleted: number;
+  account_deleted: boolean;
+  snapshot_deleted: boolean;
+  message: string;
+}
+
+/**
+ * Elimina de forma permanente los datos académicos, snapshot JSON y cuenta local del usuario autenticado.
+ */
+export async function deleteUserData(
+  params: DeleteUserDataParams,
+): Promise<DeleteUserDataResult> {
+  const res = await fetch(`${getApiBase()}/api/auth/delete-data`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const errData = (await res
+      .json()
+      .catch(() => ({ detail: "No se pudieron eliminar los datos de la cuenta." }))) as {
+      detail?: string;
+    };
+    throw new Error(errData.detail || `Error al eliminar datos (${res.status})`);
+  }
+
+  return (await res.json()) as DeleteUserDataResult;
+}
