@@ -18,7 +18,7 @@ Este documento cumple un rol complementario al [README.md](./README.md): mientra
    - [2.4. Deep Learning Secuencial: Red Neuronal Recurrente LSTM](#24-deep-learning-secuencial-red-neuronal-recurrente-lstm)
    - [2.5. Reentrenamiento Dinámico por Asignatura y Muestras Pequeñas](#25-reentrenamiento-dinámico-por-asignatura-y-muestras-pequeñas)
    - [2.6. LLMs, Contexto Persistente y Agentes con Function Calling](#26-llms-contexto-persistente-y-agentes-con-function-calling)
-   - [2.7. Despliegue de Modelos e Inferencia vía API](#27-despliegue-de-modelos-e-inferencia-vía-api)
+   - [2.7. Despliegue de Modelos, Infraestructura Híbrida e Inferencia vía API](#27-despliegue-de-modelos-infraestructura-híbrida-e-inferencia-vía-api)
 3. [Parte II — Lenguajes de Programación Visual (Cód. 5728): Implicaciones y Aplicaciones](#3-parte-ii--lenguajes-de-programación-visual-cód-5728-implicaciones-y-aplicaciones)
    - [3.1. Programación Orientada a Eventos y Reactividad Declarativa](#31-programación-orientada-a-eventos-y-reactividad-declarativa)
    - [3.2. Arquitectura Basada en Componentes Reutilizables y Tipado Estricto](#32-arquitectura-basada-en-componentes-reutilizables-y-tipado-estricto)
@@ -36,10 +36,15 @@ El **Copiloto Académico FIUNA** aborda un problema real de ingeniería y gesti�
 
 ```mermaid
 flowchart LR
-    subgraph LPV ["Lenguajes de Programación Visual (Frontend Svelte 5)"]
+    subgraph LPV ["Lenguajes de Programación Visual (Vercel: fiunai-helper.vercel.app)"]
         UI["Vistas Reactivas: Acceso, Dashboard, Simulador, Historial"]
-        VIZ["Visualización: Gauge, Matriz Paramétrica, Malla, Monitor SSE"]
+        VIZ["Visualización: Gauge SVG, Matriz Paramétrica, Malla, Monitor SSE"]
         CHAT["Burbuja Flotante Copiloto IA"]
+        APIBASE["Resolución Dinámica getApiBase() (?api= / VITE_API_URL)"]
+    end
+
+    subgraph NET ["Transporte Seguro HTTPS"]
+        CF["Cloudflare Tunnel (cloudflared / iniciar_servidor_nube.ps1)"]
     end
 
     subgraph API ["Orquestador Backend (FastAPI + SQLite)"]
@@ -56,9 +61,11 @@ flowchart LR
         LLM["Google Gemini + Function Calling"]
     end
 
-    UI <--> REST
-    VIZ <--> REST
-    CHAT <--> REST
+    UI <--> APIBASE
+    VIZ <--> APIBASE
+    CHAT <--> APIBASE
+    APIBASE <--> CF
+    CF <--> REST
     REST <--> DB
     REST <--> SCR
     REST <--> HOR
@@ -81,10 +88,11 @@ En esta materia el foco está en el **modelado matemático, el entrenamiento rig
 
 - **Implicación teórica:**  
   Un modelo entrenado con datos duplicados, valores nulos o variables mal consolidadas produce métricas artificialmente infladas (*data leakage* entre `Train` y `Test`) que fallan al generalizar con alumnos nuevos.
-- **Aplicación en el proyecto (`backend/services/ml/trainer.py`):**
-  - El dataset histórico (`datos_concatenados.csv`, 64,295 registros de FIUNA) contiene filas duplicadas donde solo cambia el identificador anonimizado `ALUMNO_ID`.
-  - La función `resolver_dataset_materia()` aplica **deduplicación estricta** ignorando `ALUMNO_ID` antes de realizar `train_test_split` estratificado.
+- **Aplicación en el proyecto (`backend/services/ml/trainer.py`, `dataset_fiuna_compact.csv`):**
+  - El dataset histórico original (`datos_concatenados.csv`, 64,295 registros de FIUNA) contiene filas duplicadas donde solo cambia el identificador anonimizado `ALUMNO_ID`.
+  - La función `resolver_dataset_materia()` aplica **deduplicación estricta** ignorando `ALUMNO_ID` antes de realizar `train_test_split` estratificado (cuando el dataset incluye esa columna).
   - Consolida la columna `Lab.` dentro de `TPLab.` cuando una asignatura registra sus laboratorios en `Lab.` con `TPLab. = 0`, evitando perder la tercera variable predictora.
+  - Para despliegue ligero y repositorios livianos, se generó el dataset compacto pre-deduplicado `backend/services/ml/dataset_fiuna_compact.csv` (**`29,687` registros únicos, `1.12 MB`**), configurado como respaldo automático (`CSV_PATH_COMPACT` / `CSV_PATH`) con **paridad exacta verificada** respecto al dataset original (ej. *Diseño Lógico Digital* `395`, *Probabilidad y Estadística* `365`, *Estática* `853`).
 
 ### 2.2. Machine Learning Supervisado Clásico y Desbalance de Clases
 
@@ -129,7 +137,10 @@ En esta materia el foco está en el **modelado matemático, el entrenamiento rig
   Un modelo entrenado solo con *Estática* no refleja la distribución de dificultad de otras cátedras. Sin embargo, reentrenar materias con muy pocos reprobados únicos (ej. `4` casos negativos) genera evaluaciones ROC irreales (`100%`) por varianza extrema en el conjunto de prueba.
 - **Aplicación en el proyecto (`backend/services/ml/trainer.py`, `predictor.py`):**
   - El orquestador `reentrenar_modelos_materia()` reentrena bajo demanda los **5 modelos** para la asignatura seleccionada en el Simulador y limpia las cachés en memoria.
-  - **Protocolo de Umbral Mínimo + Complementación de Cohorte:** exige al menos `60` registros únicos y `≥ 20` aprobados + `≥ 20` reprobados. Si una materia no alcanza ese mínimo (caso real: *Diseño Lógico Digital*, `35` únicos: `31 S / 4 N`), conserva el **100% de sus registros propios** y los complementa con una muestra estratificada de **360 alumnos de su misma carrera** (o FIUNA), estabilizando el `AUC-ROC` en valores realistas (`86.9%–91.8%` en lugar de `100%`).
+  - **Protocolo de Umbral Mínimo + Complementación de Cohorte:** exige al menos `60` registros únicos y `≥ 20` aprobados + `≥ 20` reprobados (como *Estática*: `853` registros propios, o la cátedra *Probabilidad*: `640` únicos `345 S / 295 N`). Si una materia no alcanza ese mínimo (caso real: *Diseño Lógico Digital*, `35` únicos: `31 S / 4 N`), conserva el **100% de sus registros propios** y los complementa con una muestra estratificada de **360 alumnos de su misma carrera** (o cohorte global FIUNA), estabilizando el `AUC-ROC` en valores realistas:
+    - **`ELECTRONICA 1`** (`N = 421`, Cohorte Carrera MCT): RL `AUC = 0.8912`, RF `AUC = 0.9001`, GB H3 `AUC = 0.9183`, LSTM H3 `AUC = 0.8925`.
+    - **`PROBABILIDAD Y ESTADISTICA`** (`N = 365`, Cohorte Carrera ELE): RL `AUC = 0.9301`, RF `AUC = 0.9160`, GB H3 `AUC = 0.8670`, LSTM H3 `AUC = 0.8479`.
+    - **`LENGUAJE DE PROGRAMACION VISUAL`** (`N = 379`, Cohorte FIUNA): RL `AUC = 0.9351`, RF `AUC = 0.9346`, GB H3 `AUC = 0.8694`, LSTM H3 `AUC = 0.8750`.
 
 ### 2.6. LLMs, Contexto Persistente y Agentes con Function Calling
 
@@ -139,12 +150,17 @@ En esta materia el foco está en el **modelado matemático, el entrenamiento rig
   - Integración con **Google Gemini** (`gemini-3.5-flash-lite`) mediante herramientas declaradas: `predecir_probabilidad_aprobacion` y `analizar_serie_temporal_aprobacion`.
   - Inyección de contexto real del estudiante desde SQLite (`UsuarioLocal`, `Inscripcion`, `Parcial`, `NotaFinal`) y memoria conversacional persistida por sesión (`ChatSession`, `ChatMessage`).
 
-### 2.7. Despliegue de Modelos e Inferencia vía API
+### 2.7. Despliegue de Modelos, Infraestructura Híbrida e Inferencia vía API
 
 - **Implicación teórica:**  
-  Separar el motor de ML en una API REST tipada permite escalar, versionar artefactos y proteger claves de API fuera del cliente.
-- **Aplicación en el proyecto (`backend/main.py`, `backend/schemas.py`):**
-  - Endpoints documentados automáticamente en Swagger (`/docs`): `POST /api/ml/predict`, `POST /api/ml/predict-sequential`, `GET /api/ml/models`, `POST /api/ml/retrain` y `POST /api/chat`, validados con **Pydantic v2**.
+  Separar el motor de ML en una API REST tipada permite escalar, versionar artefactos y proteger claves de API fuera del cliente. Al elegir infraestructura en producción para modelos Deep Learning + automatización *headless* (PyTorch + Chromium), también deben evaluarse las restricciones reales de memoria RAM y costos de ejecución.
+- **Aplicación en el proyecto (`backend/main.py`, `Dockerfile`, `iniciar_servidor_nube.ps1`):**
+  - **Endpoints tipados y validados con Pydantic v2 (`/docs`):** `POST /api/ml/predict`, `POST /api/ml/predict-sequential`, `GET /api/ml/models`, `POST /api/ml/retrain` y `POST /api/chat`.
+  - **Arquitectura de Despliegue Híbrido (Vercel + Cloudflare Tunnel):**
+    - El frontend está publicado en **Vercel** (`https://fiunai-helper.vercel.app/`).
+    - El backend FastAPI se expone por HTTPS desde el servidor local mediante **Cloudflare Tunnel (`cloudflared`)** con el script `iniciar_servidor_nube.ps1`. Se eligió esta topología tras comprobar que Hugging Face Spaces restringió los Spaces Docker/Gradio a cuentas PRO y que los tiers gratuitos estándar (`512 MB` RAM) resultan ajustados al ejecutar simultáneamente **PyTorch CPU + Playwright Chromium**.
+    - Política **CORS** configurada en `backend/main.py` con `allow_origin_regex` para subdominios `*.vercel.app` y `*.hf.space`, soporte de `X-Accel-Buffering: no` para streaming SSE y guardado tolerante a fallos (`try/except`) en `insweb_scraper.py`.
+  - **Contenedorización portable (`Dockerfile` + `requirements-docker.txt`):** imagen `python:3.14-slim` con versiones fijadas (`torch==2.15.0+cpu`, `scikit-learn==1.9.1`, `playwright==1.64.1` con Chromium instalado, usuario no-root UID `1000` y puerto configurable `${PORT:-7860}`), lista para migrar a cualquier proveedor Docker (Cloud Run, VPS o Railway).
 
 ---
 
@@ -201,17 +217,20 @@ En esta materia el foco está en el **diseño de interfaces gráficas interactiv
 - **Aplicación en el proyecto:**
   - **Layout adaptable** con Tailwind CSS (grillas de 12 columnas en escritorio que colapsan a 1 columna en móvil y menú lateral deslizable).
   - **Modo Claro / Oscuro** alternable desde `Header.svelte` y persistido en `localStorage`.
+  - **Resiliencia visual sin dependencias frágiles:** las imágenes remotas en `Sidebar.svelte` y `+page.svelte` incluyen manejadores `onerror` con respaldo local en insignia FI / ícono SVG integrado.
   - **Ventana Flotante de Chat (`AiCopilotChat.svelte`):** burbuja flotante clicable en la esquina inferior derecha que al abrirse se despliega como panel flotante en escritorio y ocupa pantalla completa en dispositivos móviles.
-  - **Guía Visual Interactiva de Defensa (`defensa_ignorar_github/guia_interactiva_defensa.html`):** página estática interactiva con tarjetas clicables para explicar visualmente cada módulo del sistema durante la exposición.
+  - **Alcance modular de botones futuros:** controles secundarios proyectados para iteraciones posteriores (`Feedback & Ajustes IA`, `#ayuda`, campana de notificaciones, `Descargar Constancia` y `Exportar PDF`) permanecen desacoplados como puntos de extensión visual sin simular respuestas falsas.
+  - **Material Interactivo de Defensa (`defensa_ignorar_github/`):** guía clicable (`guia_defensa_ia_lpv.html`, `guia_interactiva_defensa.html`) y presentación v2 (`presentacion_defensa_v2.html`) para exponer cada módulo paso a paso.
 
 ### 3.6. Integración de la Interfaz con Servicios Externos y Persistencia
 
 - **Implicación teórica:**  
-  El frontend visual debe aislar la lógica de red y transformación de datos en una capa de servicios, ofreciendo manejo limpio de estados (`loading`, `error`, `empty`, `Modo Invitado` vs. `Datos Reales`).
+  El frontend visual debe aislar la lógica de red y transformación de datos en una capa de servicios, ofreciendo manejo limpio de estados (`loading`, `error`, `empty`, `Modo Invitado` vs. `Datos Reales`) y portabilidad entre entornos local y nube.
 - **Aplicación en el proyecto (`mi-app-svelte/src/lib/services/`):**
-  - Servicios especializados: `auth.ts`, `scraper.ts`, `gemini.ts`, `dashboard-stats.ts`, `history-data.ts`, `simulator-data.ts` y `period.ts`.
+  - Servicios especializados: `api-base.ts`, `auth.ts`, `scraper.ts`, `gemini.ts`, `dashboard-stats.ts`, `history-data.ts`, `simulator-data.ts` y `period.ts`.
+  - **Resolución dinámica de backend (`api-base.ts`):** `getApiBase()` prioriza el parámetro URL `?api=<URL_TUNEL>` persistido en `localStorage` (`fiunai_api_base_override`, con `?api=reset` para restaurar) antes de `VITE_API_URL`, permitiendo reconectar `https://fiunai-helper.vercel.app/` ante cambios de URL temporal de Cloudflare Tunnel sin recompilar ni redesplegar en Vercel.
   - Cálculo automático del periodo lectivo vigente (`2026-2`) y del semestre oficial del alumno (criterio FIUNA: semestre de la asignatura inscrita más baja).
-  - Integración transparente con el backend FastAPI y SQLite (`copilot.db`), con fallback controlado a datos de demostración en Modo Invitado.
+  - Integración transparente con el backend FastAPI y SQLite (`copilot.db`), con fallback controlado a datos de demostración en Modo Invitado y mensajes diagnósticos claros si el servidor/túnel no está activo.
 
 ---
 
@@ -220,12 +239,16 @@ En esta materia el foco está en el **diseño de interfaces gráficas interactiv
 | Módulo / Archivo | Materia Principal | Rol Técnico en el Proyecto |
 | :--- | :---: | :--- |
 | `backend/services/ml/trainer.py` | **IA** | Limpieza, deduplicación anti-leakage, complementación de cohorte y entrenamiento clásico. |
+| `backend/services/ml/dataset_fiuna_compact.csv` | **IA** | Dataset compacto pre-deduplicado (`29,687` filas, `1.12 MB`) con paridad verificada para despliegue. |
 | `backend/services/ml/sequential_tracker.py` | **IA** | Ensamble temporal Gradient Boosting en 3 hitos (`H1`, `H2`, `H3`). |
 | `backend/services/ml/lstm_tracker.py` | **IA** | Red Neuronal Recurrente LSTM en PyTorch para secuencias de longitud variable. |
 | `backend/services/ml/predictor.py` | **IA** | Inferencia de consenso híbrido, catálogo de modelos y reentrenamiento por materia. |
 | `backend/services/llm.py` | **IA** | Agente conversacional Google Gemini con *Function Calling* y contexto SQLite. |
 | `backend/services/scraper/*` | **IA / Backend** | Ingesta automatizada headless (Playwright), sanitización y streaming SSE. |
 | `backend/services/schedule.py` | **Backend / LPV** | Lectura del horario oficial FIUNA (`data/horarios_oficiales/`) filtrado por carrera. |
+| `Dockerfile` / `requirements-docker.txt` | **Infraestructura** | Empaquetado portable Python 3.14-slim + PyTorch CPU + Playwright Chromium. |
+| `iniciar_servidor_nube.ps1` | **Infraestructura** | Orquestador local Uvicorn + Cloudflare Tunnel HTTPS para exposición sin límite de RAM. |
+| `mi-app-svelte/src/lib/services/api-base.ts` | **LPV / Infra** | Resolución dinámica de URL backend (`?api=` / `localStorage` / `VITE_API_URL`). |
 | `mi-app-svelte/src/routes/+page.svelte` | **LPV** | Portal de acceso, autenticación local y Monitor de Scraping en Vivo (SSE). |
 | `mi-app-svelte/src/lib/components/dashboard/*` | **LPV** | Dashboard académico, grilla Bento, seguimiento de cátedras y calendario oficial. |
 | `mi-app-svelte/src/lib/components/simulator/*` | **LPV + IA** | Simulador interactivo, Gauge SVG, matriz paramétrica, reentrenamiento y chat flotante. |

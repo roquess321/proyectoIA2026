@@ -1,15 +1,9 @@
----
-title: Copiloto Academico FIUNA
-emoji: 🎓
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-app_port: 7860
----
-
 # 🎓 Copiloto Académico FIUNA — Plataforma Inteligente de Acompañamiento y Predicción
 
 Plataforma web interactiva desarrollada para estudiantes de la Facultad de Ingeniería de la Universidad Nacional de Asunción (**FIUNA**). Combina un portal de gestión académica, visualización de historial curricular, un simulador de notas, un **Agente Conversacional con Google Gemini** y **5 modelos de Machine Learning y Deep Learning** (clásicos y de series temporales) para estimar probabilidades de aprobación.
+
+> 🌐 **Frontend publicado en Vercel:** `https://fiunai-helper.vercel.app/` (conectado vía **Cloudflare Tunnel HTTPS** al backend FastAPI local).  
+> 📘 **Documentación académica por asignatura:** ver [DOCUMENTACION_IA_Y_LPV.md](./DOCUMENTACION_IA_Y_LPV.md).
 
 ---
 
@@ -155,31 +149,58 @@ Verás en pantalla:
 
 ---
 
+## 🌐 Despliegue en Producción (Vercel + Cloudflare Tunnel)
+
+La arquitectura final separa la entrega estática/edge en la nube del motor pesado de cómputo y scraping:
+
+- **Frontend en Vercel (`https://fiunai-helper.vercel.app/`):** desplegado directamente desde este repositorio con **Root Directory** en `mi-app-svelte` (`SvelteKit`).
+- **Exposición segura del Backend local (Cloudflare Tunnel):** como el backend ejecuta **PyTorch CPU + scikit-learn + Playwright Chromium** de forma simultánea y los planes gratuitos estándar limitan la RAM a `512 MB` (además de que Hugging Face Spaces restringió los Spaces Docker a plan PRO), el backend corre localmente sin restricciones de memoria ni costos y se expone por HTTPS mediante `cloudflared`.
+- **Arranque en un solo paso (`iniciar_servidor_nube.ps1`):**
+  ```powershell
+  .\iniciar_servidor_nube.ps1
+  ```
+  Verifica si el puerto `8000` ya está escuchando (si no, inicia `uvicorn backend.main:app --host 127.0.0.1 --port 8000`), abre el túnel HTTPS en `cloudflared` e imprime el enlace listo para la defensa.
+- **Reconexión en caliente sin redeploy (`?api=`):** [api-base.ts](./mi-app-svelte/src/lib/services/api-base.ts) lee `VITE_API_URL` por defecto, pero permite cambiar la URL del backend al instante abriendo `https://fiunai-helper.vercel.app/?api=<NUEVA_URL_HTTPS>` (se guarda en `localStorage` bajo `fiunai_api_base_override`, o `?api=reset` para limpiar).
+- **Portabilidad Docker lista:** el repositorio incluye [Dockerfile](./Dockerfile), [requirements-docker.txt](./requirements-docker.txt), [.dockerignore](./.dockerignore) y el dataset compacto [dataset_fiuna_compact.csv](./backend/services/ml/dataset_fiuna_compact.csv) (`29,687` registros deduplicados, `1.12 MB`) listos para desplegar en cualquier servidor Docker con `≥ 1 GB` de RAM (puerto `${PORT:-7860}`).
+
+---
+
 ## 📁 Estructura Resumida del Repositorio
 
 ```text
 proyectoIA2026/
+├── Dockerfile                      # Imagen Python 3.14-slim + Torch CPU + Playwright Chromium (puerto 7860)
+├── requirements-docker.txt         # Dependencias backend fijadas para contenedor (CPU-only PyTorch)
+├── .dockerignore                   # Exclusión de .env, DB local y carpetas privadas de GitHub/defensa
+├── iniciar_servidor_nube.ps1       # Script PowerShell: levanta Uvicorn (8000) + Cloudflare Tunnel HTTPS
+├── DOCUMENTACION_IA_Y_LPV.md       # Implicaciones y aplicaciones detalladas por materia (IA + LPV)
+├── data/horarios_oficiales/        # Horarios oficiales FIUNA en JSON (Res. CD Nº 1637/2026/006)
 ├── backend/
-│   ├── main.py                     # API FastAPI y definición de rutas REST
+│   ├── main.py                     # API FastAPI, CORS (*.vercel.app), SSE y rutas REST
 │   ├── database.py                 # Conexión SQLite y sesiones SQLAlchemy
 │   ├── models.py                   # Tablas ORM (Chat, Estudiantes, Notas, Usuarios)
 │   ├── schemas.py                  # Validación de entradas/salidas con Pydantic
 │   ├── .env.example                # Plantilla de variables de entorno
 │   └── services/
 │       ├── llm.py                  # Cliente Gemini + Function Calling
+│       ├── schedule.py             # Lector y filtro de horarios oficiales por carrera
 │       ├── security.py             # Hashing PBKDF2-HMAC-SHA256
 │       ├── scraper/                # Pipeline Playwright para INSWEB
 │       └── ml/
-│           ├── predictor.py        # Inferencia de los 5 modelos (Clásicos + Temporales)
+│           ├── dataset_fiuna_compact.csv # Dataset compacto deduplicado (29,687 filas, 1.12 MB)
+│           ├── predictor.py        # Inferencia de los 5 modelos y reentrenamiento por materia
 │           ├── sequential_tracker.py # Ensamble Temporal Multi-Hito (Gradient Boosting)
 │           ├── lstm_tracker.py     # Red Neuronal Recurrente LSTM (PyTorch)
-│           ├── trainer.py          # Entrenamiento de modelos clásicos
+│           ├── trainer.py          # Entrenamiento clásico y complementación de cohorte
 │           └── saved_models/       # Pesos pre-entrenados (.joblib, .pt, .json)
 ├── mi-app-svelte/
 │   ├── package.json                # Dependencias Node / SvelteKit
+│   ├── .env.example                # Plantilla VITE_API_URL
 │   └── src/
 │       ├── routes/                 # Páginas: /, /dashboard, /agente-ia-pronosticos, /historial-malla-curricular
-│       └── lib/                    # Componentes Svelte 5 y servicios HTTP hacia FastAPI
+│       └── lib/
+│           ├── components/         # Componentes Svelte 5 (Dashboard, Simulador, Historial)
+│           └── services/           # api-base.ts (override ?api=), auth.ts, gemini.ts, scraper.ts, etc.
 ├── pyproject.toml                  # Dependencias Python y configuración uv/Pyright
 ├── uv.lock                         # Versiones exactas fijadas de Python
 └── README.md                       # Esta guía
@@ -199,11 +220,15 @@ proyectoIA2026/
 | **Machine Learning** | `POST /api/ml/predict` | Evalúa los 5 modelos (Regresión Logística, Árbol, Random Forest, Ensamble Temporal y LSTM). |
 | **Machine Learning** | `POST /api/ml/predict-sequential` | Predicción temporal progresiva desde el 1er parcial (Hitos 1, 2 o 3). |
 | **Machine Learning** | `GET /api/ml/models` | Lista el catálogo de modelos entrenados disponibles. |
+| **Machine Learning** | `POST /api/ml/retrain` | Reentrena bajo demanda los 5 modelos para una asignatura específica. |
 | **Autenticación** | `POST /api/auth/register` | Crea una cuenta local segura. |
 | **Autenticación** | `POST /api/auth/login-local` | Inicia sesión con usuario/cédula y contraseña local. |
 | **Autenticación** | `POST /api/auth/login` | Login / sincronización con INSWEB. |
 | **Autenticación** | `POST /api/auth/link-insweb` | Vincula y sincroniza materias desde INSWEB a una cuenta local. |
+| **Autenticación / SSE** | `POST /api/auth/link-insweb/stream` | Vincula y sincroniza INSWEB transmitiendo telemetría en vivo vía SSE. |
+| **Estudiantes / Scraper** | `GET /api/scraper/status` | Diagnóstico de salud de Playwright, conectividad INSWEB y estado SQLite. |
 | **Estudiantes / Scraper** | `POST /api/scraper/sync` | Ejecuta el scraper de Playwright bajo demanda. |
+| **Horarios** | `GET /api/horarios/examenes` | Lee el calendario oficial FIUNA desde `data/horarios_oficiales/` filtrado por carrera. |
 | **Estudiantes / Scraper** | `GET /api/estudiantes/{cedula}` | Ficha académica completa (inscripciones, parciales y notas finales). |
 | **Estudiantes / Scraper** | `GET /api/estudiantes/{cedula}/inscripciones` | Materias matriculadas del periodo. |
 | **Estudiantes / Scraper** | `GET /api/estudiantes/{cedula}/parciales` | Evaluaciones parciales registradas. |
