@@ -1,6 +1,5 @@
 import type { ScraperStreamEvent } from "./scraper";
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+import { getApiBase } from "./api-base";
 
 export interface RegisterParams {
   usuario: string;
@@ -40,7 +39,7 @@ export interface LinkInswebResult {
  * Registra una cuenta local en la base de datos SQLite.
  */
 export async function registerLocalUser(params: RegisterParams): Promise<UserAuthResult> {
-  const res = await fetch(`${API_BASE}/api/auth/register`, {
+  const res = await fetch(`${getApiBase()}/api/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
@@ -60,7 +59,7 @@ export async function registerLocalUser(params: RegisterParams): Promise<UserAut
  * Inicia sesión con usuario/cédula y contraseña local.
  */
 export async function loginLocalUser(params: LocalLoginParams): Promise<UserAuthResult> {
-  const res = await fetch(`${API_BASE}/api/auth/login-local`, {
+  const res = await fetch(`${getApiBase()}/api/auth/login-local`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
@@ -80,7 +79,7 @@ export async function loginLocalUser(params: LocalLoginParams): Promise<UserAuth
  * Vincula o re-sincroniza las materias y notas desde InsWeb hacia la cédula de la cuenta.
  */
 export async function linkInswebAccount(cedula: string, pin: string): Promise<LinkInswebResult> {
-  const res = await fetch(`${API_BASE}/api/auth/link-insweb`, {
+  const res = await fetch(`${getApiBase()}/api/auth/link-insweb`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cedula, pin }),
@@ -104,7 +103,7 @@ export async function linkInswebAccountStream(
   pin: string,
   onEvent: (event: ScraperStreamEvent) => void,
 ): Promise<LinkInswebResult> {
-  const res = await fetch(`${API_BASE}/api/auth/link-insweb/stream`, {
+  const res = await fetch(`${getApiBase()}/api/auth/link-insweb/stream`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

@@ -8,8 +8,7 @@ import type {
 	MLModelsCatalogResponse,
 	MLRetrainResponse
 } from './types';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { getApiBase } from './api-base';
 
 /**
  * Envía un mensaje al backend orquestador FastAPI (el cual interactúa con Gemini y guarda en BD).
@@ -36,7 +35,8 @@ export async function chat(
 		throw new Error('El mensaje no puede estar vacío.');
 	}
 
-	const url = `${API_BASE}/api/chat`;
+	const apiBase = getApiBase();
+	const url = `${apiBase}/api/chat`;
 
 	let response: Response;
 	try {
@@ -51,8 +51,8 @@ export async function chat(
 		});
 	} catch (networkError) {
 		throw new Error(
-			`No se pudo conectar con el servidor backend (${API_BASE}). ` +
-				'Si el backend está alojado en la nube (Hugging Face Spaces), puede tardar unos segundos en despertar tras inactividad; en entorno local asegúrate de haber iniciado "uv run uvicorn backend.main:app --reload".'
+			`No se pudo conectar con el servidor backend (${apiBase}). ` +
+				'Verifica que el servidor FastAPI y el túnel Cloudflare estén activos en tu equipo.'
 		);
 	}
 
@@ -77,7 +77,7 @@ export async function chat(
  * Obtiene el historial completo de una sesión persistido en la base de datos SQLite.
  */
 export async function getChatHistory(sessionId: string): Promise<FastApiHistoryResponse> {
-	const response = await fetch(`${API_BASE}/api/chat/history/${sessionId}`);
+	const response = await fetch(`${getApiBase()}/api/chat/history/${sessionId}`);
 	if (!response.ok) {
 		throw new Error(`No se pudo cargar el historial de la sesión ${sessionId}`);
 	}
@@ -88,7 +88,7 @@ export async function getChatHistory(sessionId: string): Promise<FastApiHistoryR
  * Lista todas las sesiones de chat almacenadas en la base de datos.
  */
 export async function listChatSessions(): Promise<FastApiSessionSummary[]> {
-	const response = await fetch(`${API_BASE}/api/chat/sessions`);
+	const response = await fetch(`${getApiBase()}/api/chat/sessions`);
 	if (!response.ok) {
 		throw new Error('No se pudieron obtener las sesiones de chat.');
 	}
@@ -105,7 +105,7 @@ export async function getMLPrediction(
 	segundoParcial: number,
 	tplab: number
 ): Promise<MLPredictResponse> {
-	const response = await fetch(`${API_BASE}/api/ml/predict`, {
+	const response = await fetch(`${getApiBase()}/api/ml/predict`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
@@ -133,7 +133,7 @@ export async function getMLSequentialPrediction(
 	tplab?: number | null,
 	segundoParcial?: number | null
 ): Promise<MLSequentialPredictResponse> {
-	const response = await fetch(`${API_BASE}/api/ml/predict-sequential`, {
+	const response = await fetch(`${getApiBase()}/api/ml/predict-sequential`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
@@ -156,7 +156,7 @@ export async function getMLSequentialPrediction(
  * Obtiene la lista de modelos de Machine Learning cargados y disponibles en el servidor.
  */
 export async function getAvailableMLModels(): Promise<MLModelsCatalogResponse> {
-	const response = await fetch(`${API_BASE}/api/ml/models`);
+	const response = await fetch(`${getApiBase()}/api/ml/models`);
 	if (!response.ok) {
 		throw new Error('No se pudo obtener el catálogo de modelos ML.');
 	}
@@ -167,7 +167,7 @@ export async function getAvailableMLModels(): Promise<MLModelsCatalogResponse> {
  * Reentrena los 5 modelos ML/LSTM del backend específicamente para una asignatura.
  */
 export async function retrainMLModels(materia: string): Promise<MLRetrainResponse> {
-	const response = await fetch(`${API_BASE}/api/ml/retrain`, {
+	const response = await fetch(`${getApiBase()}/api/ml/retrain`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ materia })
@@ -191,7 +191,7 @@ export async function retrainMLModels(materia: string): Promise<MLRetrainRespons
 export async function pingBackendHealth(): Promise<{ online: boolean; latencyMs: number | null }> {
 	const start = performance.now();
 	try {
-		const response = await fetch(`${API_BASE}/`);
+		const response = await fetch(`${getApiBase()}/`);
 		if (!response.ok) {
 			return { online: false, latencyMs: null };
 		}

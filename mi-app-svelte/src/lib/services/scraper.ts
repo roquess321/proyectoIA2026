@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+import { getApiBase } from "./api-base";
 
 export interface ScraperSyncRequest {
   cedula: string;
@@ -117,7 +117,7 @@ export async function getScraperStatus(
     params.set("cedula", cedula.trim());
   }
 
-  const res = await fetch(`${API_BASE}/api/scraper/status?${params.toString()}`);
+  const res = await fetch(`${getApiBase()}/api/scraper/status?${params.toString()}`);
   if (!res.ok) {
     const errData = (await res
       .json()
@@ -138,7 +138,7 @@ export async function syncInsweb(
   cedula: string,
   pin: string,
 ): Promise<ScraperSyncResponse> {
-  const res = await fetch(`${API_BASE}/api/scraper/sync`, {
+  const res = await fetch(`${getApiBase()}/api/scraper/sync`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cedula, pin }),
@@ -163,7 +163,7 @@ export async function getEstudiante(
   cedula: string,
 ): Promise<EstudianteSummary> {
   const res = await fetch(
-    `${API_BASE}/api/estudiantes/${encodeURIComponent(cedula)}`,
+    `${getApiBase()}/api/estudiantes/${encodeURIComponent(cedula)}`,
   );
   if (!res.ok) {
     const errData = await res
@@ -210,9 +210,10 @@ export async function getOfficialExamSchedule(
     params.set("cedula", cedula.trim());
   }
   const query = params.toString();
+  const apiBase = getApiBase();
   const url = query
-    ? `${API_BASE}/api/horarios/examenes?${query}`
-    : `${API_BASE}/api/horarios/examenes`;
+    ? `${apiBase}/api/horarios/examenes?${query}`
+    : `${apiBase}/api/horarios/examenes`;
 
   const res = await fetch(url);
   if (!res.ok) {
