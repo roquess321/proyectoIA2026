@@ -1,0 +1,37 @@
+{
+  "materia": "Máquinas Térmicas I",
+  "materia_slug": "maquinas_termicas_i",
+  "materia_dataset": "MAQUINAS",
+  "fallback_global": false,
+  "parcial_origen": "primer_parcial",
+  "total_muestras": 572,
+  "tasa_aprobacion_real": 0.7657,
+  "variables": [
+    "Primer.Par",
+    "Segundo.Par",
+    "TPLab."
+  ],
+  "metricas": {
+    "regresion_logistica": {
+      "accuracy": 0.8895,
+      "auc_roc": 0.929,
+      "precision": 0.938,
+      "recall": 0.9167,
+      "f1": 0.9272
+    },
+    "arbol_decision": {
+      "accuracy": 0.8488,
+      "auc_roc": 0.8601,
+      "precision": 0.9344,
+      "recall": 0.8636,
+      "f1": 0.8976
+    },
+    "random_forest": {
+      "accuracy": 0.8837,
+      "auc_roc": 0.9206,
+      "precision": 0.9667,
+      "recall": 0.8788,
+      "f1": 0.9206
+    }
+  }
+}

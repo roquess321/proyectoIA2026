@@ -1,0 +1,37 @@
+{
+  "materia": "SEÑALES Y SISTEMAS",
+  "materia_slug": "senales_y_sistemas",
+  "materia_dataset": "SEÑALES Y SISTEMAS (47 únicos: 32S/15N) + Cohorte Carrera MCT",
+  "fallback_global": true,
+  "parcial_origen": "primer_parcial",
+  "total_muestras": 407,
+  "tasa_aprobacion_real": 0.6486,
+  "variables": [
+    "Primer.Par",
+    "Segundo.Par",
+    "TPLab."
+  ],
+  "metricas": {
+    "regresion_logistica": {
+      "accuracy": 0.8374,
+      "auc_roc": 0.8895,
+      "precision": 0.9054,
+      "recall": 0.8375,
+      "f1": 0.8701
+    },
+    "arbol_decision": {
+      "accuracy": 0.8455,
+      "auc_roc": 0.8811,
+      "precision": 0.9067,
+      "recall": 0.85,
+      "f1": 0.8774
+    },
+    "random_forest": {
+      "accuracy": 0.8455,
+      "auc_roc": 0.9052,
+      "precision": 0.9296,
+      "recall": 0.825,
+      "f1": 0.8742
+    }
+  }
+}

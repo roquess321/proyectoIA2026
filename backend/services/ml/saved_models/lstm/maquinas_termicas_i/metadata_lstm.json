@@ -1,0 +1,34 @@
+{
+  "materia": "MÁQUINAS TÉRMICAS I",
+  "slug": "maquinas_termicas_i",
+  "materia_dataset": "MAQUINAS",
+  "fallback_global": false,
+  "tipo_arquitectura": "Red Neuronal Recurrente LSTM (PyTorch)",
+  "hiperparametros": {
+    "input_size": 4,
+    "hidden_size": 32,
+    "num_layers": 2,
+    "dropout": 0.2,
+    "epochs": 40,
+    "learning_rate": 0.003,
+    "optimizer": "Adam"
+  },
+  "metricas_por_hito": {
+    "hito_1_primer_parcial": {
+      "auc_roc": 0.8759,
+      "longitud_secuencia": 1
+    },
+    "hito_2_tp_taller": {
+      "auc_roc": 0.8864,
+      "longitud_secuencia": 2
+    },
+    "hito_3_proceso_completo": {
+      "auc_roc": 0.8945,
+      "accuracy": 0.8182,
+      "f1_score": 0.87,
+      "longitud_secuencia": 3
+    }
+  },
+  "total_estudiantes_entrenamiento": 429,
+  "total_estudiantes_test": 143
+}

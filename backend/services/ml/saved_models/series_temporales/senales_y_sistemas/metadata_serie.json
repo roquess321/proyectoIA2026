@@ -1,0 +1,36 @@
+{
+  "materia": "SEÑALES Y SISTEMAS",
+  "slug": "senales_y_sistemas",
+  "materia_dataset": "SEÑALES Y SISTEMAS (47 únicos: 32S/15N) + Cohorte Carrera MCT",
+  "fallback_global": true,
+  "tipo_modelo": "Serie Temporal Multi-Hito / Proceso Secuencial",
+  "metricas": {
+    "hito_1_primer_parcial": {
+      "auc_roc": 0.7988,
+      "variables": [
+        "Primer.Par"
+      ]
+    },
+    "hito_2_tp_taller": {
+      "auc_roc": 0.7555,
+      "variables": [
+        "Primer.Par",
+        "TPLab.",
+        "delta_tp_pp",
+        "avg_tp_pp"
+      ]
+    },
+    "hito_3_proceso_completo": {
+      "auc_roc": 0.8641,
+      "variables": [
+        "Primer.Par",
+        "Segundo.Par",
+        "TPLab.",
+        "delta_tp_pp",
+        "delta_sp_pp",
+        "promedio_proceso"
+      ]
+    }
+  },
+  "total_registros_entrenamiento": 407
+}

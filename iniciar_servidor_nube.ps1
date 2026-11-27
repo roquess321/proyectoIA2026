@@ -62,18 +62,37 @@ try {
     Write-Host '   Presiona Ctrl+C para detener el túnel al finalizar la defensa.' -ForegroundColor DarkGray
 
     $UrlShown = $false
-    & $CloudflaredCmd tunnel --url http://127.0.0.1:8000 2>&1 | ForEach-Object {
-        $line = $_.ToString()
-        Write-Host $line
-        if (-not $UrlShown -and $line -match 'https://[a-z0-9-]+\.trycloudflare\.com') {
-            $TunnelUrl = $Matches[0]
-            $UrlShown = $true
-            Write-Host ''
-            Write-Host '========================================================================' -ForegroundColor Green
-            Write-Host "  Túnel HTTPS activo : $TunnelUrl" -ForegroundColor Green
-            Write-Host "  Abrir en Vercel    : https://fiunai-helper.vercel.app/?api=$TunnelUrl" -ForegroundColor Cyan
-            Write-Host '========================================================================' -ForegroundColor Green
-            Write-Host ''
+    $PrevErrorPref = $ErrorActionPreference
+    $PrevNativePref = $null
+    if ($PSVersionTable.PSVersion.Major -ge 7) {
+        $PrevNativePref = $PSNativeCommandUseErrorActionPreference
+        $PSNativeCommandUseErrorActionPreference = $false
+    }
+    try {
+        # cloudflared escribe los logs INF en stderr; evitar que ErrorActionPreference='Stop' aborte en la primera línea
+        $ErrorActionPreference = 'Continue'
+        & $CloudflaredCmd tunnel --url http://127.0.0.1:8000 2>&1 | ForEach-Object {
+            $line = if ($_ -is [System.Management.Automation.ErrorRecord]) {
+                $_.Exception.Message
+            } else {
+                $_.ToString()
+            }
+            Write-Host $line
+            if (-not $UrlShown -and $line -match 'https://[a-z0-9-]+\.trycloudflare\.com') {
+                $TunnelUrl = $Matches[0]
+                $UrlShown = $true
+                Write-Host ''
+                Write-Host '========================================================================' -ForegroundColor Green
+                Write-Host "  Túnel HTTPS activo : $TunnelUrl" -ForegroundColor Green
+                Write-Host "  Abrir en Vercel    : https://fiunai-helper.vercel.app/?api=$TunnelUrl" -ForegroundColor Cyan
+                Write-Host '========================================================================' -ForegroundColor Green
+                Write-Host ''
+            }
+        }
+    } finally {
+        $ErrorActionPreference = $PrevErrorPref
+        if ($PSVersionTable.PSVersion.Major -ge 7 -and $null -ne $PrevNativePref) {
+            $PSNativeCommandUseErrorActionPreference = $PrevNativePref
         }
     }
 } finally {
